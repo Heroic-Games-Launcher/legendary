@@ -1566,14 +1566,7 @@ class LegendaryCore:
                                  f'available. If you previously deleted the game folder without uninstalling, run '
                                  f'"legendary uninstall -y {game.app_name}" first.')
 
-        # check if the game actually ships the files or just a uplay installer + packed game files
         uplay_required = False
-        executables = [f for f in analysis.manifest_comparison.added if
-                       f.lower().endswith('.exe') and not f.startswith('Installer/')]
-        if not updating and not any('uplay' not in e.lower() for e in executables) and \
-                any('uplay' in e.lower() for e in executables):
-            uplay_required = True
-            results.failures.add('This game requires installation via Uplay and does not ship executable game files.')
 
         if install.prereq_info:
             prereq_path = install.prereq_info['path'].lower()
