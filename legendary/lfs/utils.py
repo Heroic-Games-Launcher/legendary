@@ -171,8 +171,11 @@ class LockedJSONData(FileLock):
 
         if os.path.exists(self._file_path):
             with open(self._file_path, 'r', encoding='utf-8') as f:
-                self._data = json.load(f)
-                self._initial_data = self._data
+                try:
+                    self._data = json.load(f)
+                    self._initial_data = self._data
+                except json.JSONDecodeError:
+                    pass
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
