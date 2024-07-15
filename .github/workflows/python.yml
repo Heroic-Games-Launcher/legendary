@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ['ubuntu-20.04', 'windows-latest', 'macos-12']
+        os: ['ubuntu-20.04', 'windows-2022', 'macos-12', 'macos-14']
       fail-fast: false
       max-parallel: 3
 
@@ -51,7 +51,7 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: ${{ runner.os }}-package
+        name: ${{ matrix.os }}-package
         path: legendary/dist/*
 
   deb:
