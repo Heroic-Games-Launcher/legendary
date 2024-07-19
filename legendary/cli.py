@@ -2644,7 +2644,7 @@ class LegendaryCLI:
 
         not_accepted_eulas = []
         for key in keys:
-            if args.epic and key == 'egstore':
+            if args.skip_epic and key == 'egstore':
                 continue
             self.logger.debug(f'Fetching eula status for "{key}"')
             eula = self.core.egs.eula_get_status(key)
@@ -2655,9 +2655,9 @@ class LegendaryCLI:
 
         if not args.json:
             for eula in not_accepted_eulas:
-                key = eula.get('key')
+                title = eula.get('title')
                 url = eula.get('url')
-                print(f' * EULA "{key}" - {url}')
+                print(f' * {title} - {url}')
             print(f'EULA(s) to accept: {len(not_accepted_eulas)}')
             if not_accepted_eulas:
                 accepted = args.yes or get_boolean_choice('Mark them as accepted?')
@@ -3067,7 +3067,7 @@ def main():
                              help='Only change legendary database, do not move files (e.g. if already moved)')
 
     eula_parser.add_argument('app_name', metavar='<App Name>', help='Name of the app')
-    eula_parser.add_argument('--skip-epic', dest='epic', action='store_true',
+    eula_parser.add_argument('--skip-epic', dest='skip_epic', action='store_true',
                                   help='Skip checking for egstore EULA')
     eula_parser.add_argument('--json', dest='json', action='store_true',
                                   help='Output information in JSON format')
