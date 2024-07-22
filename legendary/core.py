@@ -64,12 +64,14 @@ class LegendaryCore:
         # on non-Windows load the programdata path from config
         if os.name != 'nt':
             self.egl.programdata_path = self.lgd.config.get('Legendary', 'egl_programdata', fallback=None)
-            if self.egl.programdata_path and not os.path.exists(self.egl.programdata_path):
-                self.log.error(f'Config EGL path ("{self.egl.programdata_path}") is invalid! Disabling sync...')
+
+        if self.egl.programdata_path and not os.path.exists(self.egl.programdata_path):
+            self.log.error(f'EGL ProgramData path ("{self.egl.programdata_path}") is invalid! Disabling sync...')
+            if os.name != 'nt':
                 self.egl.programdata_path = None
-                self.lgd.config.remove_option('Legendary', 'egl_programdata')
-                self.lgd.config.remove_option('Legendary', 'egl_sync')
-                self.lgd.save_config()
+            self.lgd.config.remove_option('Legendary', 'egl_programdata')
+            self.lgd.config.remove_option('Legendary', 'egl_sync')
+            self.lgd.save_config()
 
         self.local_timezone = datetime.now().astimezone().tzinfo
         self.language_code, self.country_code = ('en', 'US')
