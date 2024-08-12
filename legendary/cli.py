@@ -625,13 +625,16 @@ class LegendaryCLI:
                     logger.error('Game is out of date, please update or launch with update check skipping!')
                     exit(1)
                 
-                if igame.sidecar and 'rvn' in igame.sidecar:
-                    logger.info('Updating sidecar conifg...')
-                    if igame.sidecar['rvn'] != latest.sidecar_rvn:
+                try:
+                    game_sidecar = igame.sidecar or dict()
+                    if game_sidecar.get('rvn', 0) != latest.sidecar_rvn:
+                        logger.info('Updating sidecar conifg...')
                         _, _, _, new_sidecar = self.core.get_cdn_urls(game, igame.platform)
                         igame.sidecar = new_sidecar
                         self.core.lgd.set_installed_game(app_name, igame)
                         self.core.egl_export(app_name)
+                except Exception as err:
+                    logger.error(f'Failed to update sidecar - {err}')
 
 
         params = self.core.get_launch_parameters(app_name=app_name, offline=args.offline,
