@@ -1657,10 +1657,11 @@ class LegendaryCLI:
 
         manifest_data = None
         entitlements = None
+        sidecar = None
         # load installed manifest or URI
         if args.offline or manifest_uri:
             if app_name and self.core.is_installed(app_name):
-                manifest_data, _ = self.core.get_installed_manifest(app_name)
+                manifest_data, _, sidecar = self.core.get_installed_manifest(app_name)
             elif manifest_uri and manifest_uri.startswith('http'):
                 r = self.core.egs.unauth_session.get(manifest_uri)
                 r.raise_for_status()
@@ -1676,7 +1677,7 @@ class LegendaryCLI:
             game.metadata = egl_meta
             # Get manifest if asset exists for current platform
             if args.platform in game.asset_infos:
-                manifest_data, _, _ = self.core.get_cdn_manifest(game, args.platform)
+                manifest_data, _, sidecar = self.core.get_cdn_manifest(game, args.platform)
 
         if game:
             game_infos = info_items['game']
@@ -1905,6 +1906,8 @@ class LegendaryCLI:
                                           tag_disk_size_human or 'N/A', tag_disk_size))
             manifest_info.append(InfoItem('Download size by install tag', 'tag_download_size',
                                           tag_download_size_human or 'N/A', tag_download_size))
+
+            manifest_info.append(InfoItem('Sidecar Config', 'sidecar_config', sidecar, sidecar))
 
         if not args.json:
             def print_info_item(item: InfoItem):
