@@ -18,6 +18,7 @@ class GameAsset:
     label_name: str = ''
     namespace: str = ''
     metadata: Dict = field(default_factory=dict)
+    sidecar_rvn: int = 0
 
     @classmethod
     def from_egs_json(cls, json):
@@ -29,6 +30,7 @@ class GameAsset:
         tmp.label_name = json.get('labelName', '')
         tmp.namespace = json.get('namespace', '')
         tmp.metadata = json.get('metadata', {})
+        tmp.sidecar_rvn = json.get('sidecarRvn', 0)
         return tmp
 
     @classmethod
@@ -41,6 +43,7 @@ class GameAsset:
         tmp.label_name = json.get('label_name', '')
         tmp.namespace = json.get('namespace', '')
         tmp.metadata = json.get('metadata', {})
+        tmp.sidecar_rvn = json.get('sidecarRvn', 0)
         return tmp
 
 
@@ -168,6 +171,7 @@ class InstalledGame:
     uninstaller: Optional[Dict] = None
     requires_ot: bool = False
     save_path: Optional[str] = None
+    sidecar: Optional[dict] = None
 
     @classmethod
     def from_json(cls, json):
@@ -194,6 +198,7 @@ class InstalledGame:
         tmp.install_size = json.get('install_size', 0)
         tmp.egl_guid = json.get('egl_guid', '')
         tmp.install_tags = json.get('install_tags', [])
+        tmp.sidecar = json.get('sidecar', None)
         return tmp
 
 
