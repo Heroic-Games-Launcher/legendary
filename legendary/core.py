@@ -1883,7 +1883,7 @@ class LegendaryCore:
                 new_config[key.capitalize()] = json_config[key]
 
             with open(os.path.join(egstore_folder, f'{lgd_game.app_name}appconfig.json', ), 'w') as ac:
-                ac.write(json.dumps(new_config))
+                json.dump(new_config, ac)
 
         mancpn = dict(FormatVersion=0, AppName=app_name,
                       CatalogItemId=lgd_game.catalog_item_id,
