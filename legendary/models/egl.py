@@ -70,6 +70,7 @@ class EGLManifest:
         self.can_run_offline = None
         self.is_incomplete_install = None
         self.needs_validation = None
+        self.sidecar_config_revision = 0 
 
         self.remainder = dict()
 
@@ -98,6 +99,7 @@ class EGLManifest:
         tmp.can_run_offline = json.pop('bCanRunOffline', True)
         tmp.is_incomplete_install = json.pop('bIsIncompleteInstall', False)
         tmp.needs_validation = json.pop('bNeedsValidation', False)
+        tmp.sidecar_config_revision = json.pop('SidecarConfigRevision', 0)
         tmp.remainder = json.copy()
         return tmp
 
@@ -125,6 +127,7 @@ class EGLManifest:
         out['bCanRunOffline'] = self.can_run_offline
         out['bIsIncompleteInstall'] = self.is_incomplete_install
         out['bNeedsValidation'] = self.needs_validation
+        out['SidecarConfigRevision'] = self.sidecar_config_revision
         return out
 
     @classmethod
@@ -151,6 +154,8 @@ class EGLManifest:
         tmp.can_run_offline = igame.can_run_offline
         tmp.is_incomplete_install = False
         tmp.needs_validation = igame.needs_verification
+        if igame.sidecar:
+            tmp.sidecar_config_revision = igame.sidecar.get('rvn', 0)
         return tmp
 
     def to_lgd_igame(self) -> InstalledGame:

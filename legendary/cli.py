@@ -365,7 +365,7 @@ class LegendaryCLI:
             if not game:
                 logger.fatal(f'Could not fetch metadata for "{args.app_name}" (check spelling/account ownership)')
                 exit(1)
-            manifest_data, _ = self.core.get_cdn_manifest(game, platform=args.platform)
+            manifest_data, _, _ = self.core.get_cdn_manifest(game, platform=args.platform)
 
         manifest = self.core.load_manifest(manifest_data)
         files = sorted(manifest.file_manifest_list.elements,
@@ -580,7 +580,8 @@ class LegendaryCLI:
             return self._launch_origin(args)
 
         igame = self.core.get_installed_game(app_name)
-        if (not igame or not igame.executable) and (game := self.core.get_game(app_name)) is not None:
+        game = self.core.get_game(app_name)
+        if (not igame or not igame.executable) and game is not None:
             # override installed game with base title
             if game.is_launchable_addon:
                 addon_app_name = app_name
@@ -623,6 +624,18 @@ class LegendaryCLI:
                 if latest.build_version != igame.version:
                     logger.error('Game is out of date, please update or launch with update check skipping!')
                     exit(1)
+                
+                try:
+                    game_sidecar = igame.sidecar or dict()
+                    if game_sidecar.get('rvn', 0) != latest.sidecar_rvn:
+                        logger.info('Updating sidecar conifg...')
+                        _, _, _, new_sidecar = self.core.get_cdn_urls(game, igame.platform)
+                        igame.sidecar = new_sidecar
+                        self.core.lgd.set_installed_game(app_name, igame)
+                        self.core.egl_export(app_name)
+                except Exception as err:
+                    logger.error(f'Failed to update sidecar - {err}')
+
 
         params = self.core.get_launch_parameters(app_name=app_name, offline=args.offline,
                                                  extra_args=extra, user=args.user_name_override,
@@ -1232,7 +1245,7 @@ class LegendaryCLI:
 
                 logger.warning('No manifest could be loaded, the file may be missing. Downloading the latest manifest.')
                 game = self.core.get_game(args.app_name, platform=igame.platform)
-                manifest_data, _ = self.core.get_cdn_manifest(game, igame.platform)
+                manifest_data, _, _ = self.core.get_cdn_manifest(game, igame.platform)
             else:
                 logger.critical(f'Manifest appears to be missing! To repair, run "legendary repair '
                                 f'{args.app_name} --repair-and-update", this will however redownload all files '
@@ -1644,10 +1657,11 @@ class LegendaryCLI:
 
         manifest_data = None
         entitlements = None
+        sidecar = None
         # load installed manifest or URI
         if args.offline or manifest_uri:
             if app_name and self.core.is_installed(app_name):
-                manifest_data, _ = self.core.get_installed_manifest(app_name)
+                manifest_data, _, sidecar = self.core.get_installed_manifest(app_name)
             elif manifest_uri and manifest_uri.startswith('http'):
                 r = self.core.egs.unauth_session.get(manifest_uri)
                 r.raise_for_status()
@@ -1663,7 +1677,7 @@ class LegendaryCLI:
             game.metadata = egl_meta
             # Get manifest if asset exists for current platform
             if args.platform in game.asset_infos:
-                manifest_data, _ = self.core.get_cdn_manifest(game, args.platform)
+                manifest_data, _, sidecar = self.core.get_cdn_manifest(game, args.platform)
 
         if game:
             game_infos = info_items['game']
@@ -1892,6 +1906,8 @@ class LegendaryCLI:
                                           tag_disk_size_human or 'N/A', tag_disk_size))
             manifest_info.append(InfoItem('Download size by install tag', 'tag_download_size',
                                           tag_download_size_human or 'N/A', tag_download_size))
+
+            manifest_info.append(InfoItem('Sidecar Config', 'sidecar_config', sidecar, sidecar))
 
         if not args.json:
             def print_info_item(item: InfoItem):

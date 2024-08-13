@@ -780,6 +780,15 @@ class LegendaryCore:
             f'-epicsandboxid={game.namespace}'
         ])
 
+        if install.sidecar and 'config' in install.sidecar:
+            try:
+                config = json.loads(install.sidecar['config'])
+                dep_id = config.get('deploymentId')
+                if dep_id:
+                    params.egl_parameters.append(f'-epicdeploymentid={dep_id}')
+            except Exception:
+                self.log.warning("Failed to parse sidecar config")
+
         if extra_args:
             params.user_parameters.extend(extra_args)
 
@@ -1220,7 +1229,7 @@ class LegendaryCore:
     def get_installed_manifest(self, app_name):
         igame = self._get_installed_game(app_name)
         old_bytes = self.lgd.load_manifest(app_name, igame.version, igame.platform)
-        return old_bytes, igame.base_urls
+        return old_bytes, igame.base_urls, igame.sidecar
 
     def get_cdn_urls(self, game, platform='Windows'):
         m_api_r = self.egs.get_game_manifest(game.namespace, game.catalog_item_id,
@@ -1244,10 +1253,12 @@ class LegendaryCore:
             else:
                 manifest_urls.append(manifest['uri'])
 
-        return manifest_urls, base_urls, manifest_hash
+        sidecar = m_api_r['elements'][0].get('sidecar')
+
+        return manifest_urls, base_urls, manifest_hash, sidecar
 
     def get_cdn_manifest(self, game, platform='Windows', disable_https=False):
-        manifest_urls, base_urls, manifest_hash = self.get_cdn_urls(game, platform)
+        manifest_urls, base_urls, manifest_hash, sidecar = self.get_cdn_urls(game, platform)
         if not manifest_urls:
             raise ValueError('No manifest URLs returned by API')
 
@@ -1275,7 +1286,7 @@ class LegendaryCore:
         if sha1(manifest_bytes).hexdigest() != manifest_hash:
             raise ValueError('Manifest sha hash mismatch!')
 
-        return manifest_bytes, base_urls
+        return manifest_bytes, base_urls, sidecar
 
     def get_uri_manifest(self, uri):
         if uri.startswith('http'):
@@ -1312,6 +1323,7 @@ class LegendaryCore:
                          disable_https: bool = False, bind_ip: str = None) -> (DLManager, AnalysisResult, ManifestMeta):
         # load old manifest
         old_manifest = None
+        sidecar = None
 
         # load old manifest if we have one
         if override_old_manifest:
@@ -1319,7 +1331,7 @@ class LegendaryCore:
             old_bytes, _ = self.get_uri_manifest(override_old_manifest)
             old_manifest = self.load_manifest(old_bytes)
         elif not disable_patching and not force and self.is_installed(game.app_name):
-            old_bytes, _base_urls = self.get_installed_manifest(game.app_name)
+            old_bytes, _base_urls, sidecar = self.get_installed_manifest(game.app_name)
             if _base_urls and not game.base_urls:
                 game.base_urls = _base_urls
 
@@ -1341,7 +1353,7 @@ class LegendaryCore:
             if _base_urls:
                 base_urls = _base_urls
         else:
-            new_manifest_data, base_urls = self.get_cdn_manifest(game, platform, disable_https=disable_https)
+            new_manifest_data, base_urls, sidecar = self.get_cdn_manifest(game, platform, disable_https=disable_https)
             # overwrite base urls in metadata with current ones to avoid using old/dead CDNs
             game.base_urls = base_urls
             # save base urls to game metadata
@@ -1517,7 +1529,7 @@ class LegendaryCore:
                               can_run_offline=offline == 'true', requires_ot=ot == 'true',
                               is_dlc=base_game is not None, install_size=anlres.install_size,
                               egl_guid=egl_guid, install_tags=file_install_tag,
-                              platform=platform, uninstaller=uninstaller)
+                              platform=platform, uninstaller=uninstaller, sidecar=sidecar)
 
         return dlm, anlres, igame
 
@@ -1699,6 +1711,7 @@ class LegendaryCore:
     def import_game(self, game: Game, app_path: str, egl_guid='', platform='Windows') -> (Manifest, InstalledGame):
         needs_verify = True
         manifest_data = None
+        sidecar = None
 
         # check if the game is from an EGL installation, load manifest if possible
         if not game.is_dlc and os.path.exists(os.path.join(app_path, '.egstore')):
@@ -1734,7 +1747,7 @@ class LegendaryCore:
 
         if not manifest_data:
             self.log.info(f'Downloading latest manifest for "{game.app_name}"')
-            manifest_data, base_urls = self.get_cdn_manifest(game)
+            manifest_data, base_urls, sidecar = self.get_cdn_manifest(game)
             if not game.base_urls:
                 game.base_urls = base_urls
                 self.lgd.set_game_meta(game.app_name, game)
@@ -1760,7 +1773,7 @@ class LegendaryCore:
                               executable=new_manifest.meta.launch_exe, can_run_offline=offline == 'true',
                               launch_parameters=new_manifest.meta.launch_command, requires_ot=ot == 'true',
                               needs_verification=needs_verify, install_size=install_size, egl_guid=egl_guid,
-                              platform=platform)
+                              platform=platform, sidecar=sidecar)
 
         return new_manifest, igame
 
@@ -1859,6 +1872,18 @@ class LegendaryCore:
         # copy manifest and create mancpn file in .egstore folder
         with open(os.path.join(egstore_folder, f'{egl_game.installation_guid}.manifest', ), 'wb') as mf:
             mf.write(manifest_data)
+
+        if lgd_igame.sidecar and 'config' in lgd_igame.sidecar:
+            # EGL seems to change keys to Pascal
+            sidecar_conf = lgd_igame.sidecar['config']
+            json_config = json.loads(sidecar_conf)
+            new_config = dict()
+            # Make config PascalCase
+            for key in json_config:
+                new_config[key.capitalize()] = json_config[key]
+
+            with open(os.path.join(egstore_folder, f'{lgd_game.app_name}appconfig.json', ), 'w') as ac:
+                json.dump(new_config, ac)
 
         mancpn = dict(FormatVersion=0, AppName=app_name,
                       CatalogItemId=lgd_game.catalog_item_id,
@@ -2011,7 +2036,7 @@ class LegendaryCore:
         if not self.logged_in:
             self.egs.start_session(client_credentials=True)
 
-        _manifest, base_urls = self.get_cdn_manifest(EOSOverlayApp)
+        _manifest, base_urls, _ = self.get_cdn_manifest(EOSOverlayApp)
         manifest = self.load_manifest(_manifest)
 
         if igame := self.lgd.get_overlay_install_info():
