@@ -1852,7 +1852,7 @@ class LegendaryCore:
         # load igame/game
         lgd_game = self.get_game(app_name)
         lgd_igame = self._get_installed_game(app_name)
-        manifest_data, _ = self.get_installed_manifest(app_name)
+        manifest_data, _, _ = self.get_installed_manifest(app_name)
         if not manifest_data:
             self.log.error(f'Game Manifest for "{app_name}" not found, cannot export!')
             return
