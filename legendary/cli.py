@@ -1000,6 +1000,7 @@ class LegendaryCLI:
                                                           file_prefix_filter=args.file_prefix,
                                                           file_exclude_filter=args.file_exclude_prefix,
                                                           file_install_tag=args.install_tag,
+                                                          read_files=args.read_files,
                                                           dl_optimizations=args.order_opt,
                                                           dl_timeout=args.dl_timeout,
                                                           repair=args.repair_mode,
@@ -2850,6 +2851,8 @@ def main():
                                 type=str, help='Exclude files starting with <prefix> (case insensitive)')
     install_parser.add_argument('--install-tag', dest='install_tag', action='append', metavar='<tag>',
                                 type=str, help='Only download files with the specified install tag')
+    install_parser.add_argument('--read-files', dest='read_files', action='store_true',
+                                help='Read duplicated parts from already saved files, do not keep them in memory')
     install_parser.add_argument('--enable-reordering', dest='order_opt', action='store_true',
                                 help='Enable reordering optimization to reduce RAM requirements '
                                      'during download (may have adverse results for some titles)')
