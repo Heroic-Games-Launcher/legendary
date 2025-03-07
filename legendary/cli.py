@@ -2070,6 +2070,8 @@ class LegendaryCLI:
                 break
             else:
                 logger.error('No linked ubisoft account found! Link your accounts via your browser and try again.')
+                if args.summary:
+                    return
                 webbrowser.open('https://www.epicgames.com/id/link/ubisoft')
                 print('If the web page did not open automatically, please manually open the following URL: '
                       'https://www.epicgames.com/id/link/ubisoft')
@@ -2084,7 +2086,7 @@ class LegendaryCLI:
             owned_entitlements = {i['entitlementName'] for i in entitlements}
 
             uplay_games = []
-            activated = 0
+            activated = []
             for game in games:
                 for dlc_data in game.metadata.get('dlcItemList', []):
                     if dlc_data['entitlementName'] not in owned_entitlements:
@@ -2105,12 +2107,34 @@ class LegendaryCLI:
                 if game.partner_link_type != 'ubisoft':
                     continue
                 if game.partner_link_id in redeemed:
-                    activated += 1
+                    activated.append(game)
                     continue
                 uplay_games.append(game)
+            
+            if args.summary:
+                summary = dict(activated=[], redeemable=[])
+                if args.json:
+                    for game in uplay_games:
+                        summary['redeemable'].append({'app_name': game.app_name, 'title': game.app_title})
+                    for game in activated:
+                        summary['activated'].append({'app_name': game.app_name, 'title': game.app_title})
+                    print(json.dumps(summary))
+                else:
+                    if len(activated):
+                        print('Games that can be redeemed:')
+                    for game in activated:
+                        summary['activated'].append({'app_name': game.app_name, 'title': game.app_title})
+                        print(f' * {game.app_title} (App name: {game.app_name})')
+                    if len(uplay_games):
+                        print('Games that can be redeemed:')
+                    for game in uplay_games:
+                        summary['redeemable'].append({'app_name': game.app_name, 'title': game.app_title})
+                        print(f' * {game.app_title} (App name: {game.app_name})')
+
+                return
 
             if not uplay_games:
-                logger.info(f'All of your {activated} titles have already been activated on your Ubisoft account.')
+                logger.info(f'All of your {len(activated)} titles have already been activated on your Ubisoft account.')
                 return
 
             logger.info(f'Found {len(uplay_games)} game(s) to redeem:')
@@ -3051,6 +3075,10 @@ def main():
     info_parser.add_argument('--platform', dest='platform', action='store', metavar='<Platform>', type=str,
                              help='Platform to fetch info for (default: installed or Mac on macOS, Windows otherwise)')
 
+    activate_parser.add_argument('-s','--summary', dest='summary', action='store_true',
+                                 help='Only print information about the activation status (uplay)')
+    activate_parser.add_argument('-j', '--json', dest='json', action='store_true',
+                                 help='Print summary data in JSON format')
     store_group = activate_parser.add_mutually_exclusive_group(required=True)
     store_group.add_argument('-U', '--uplay', dest='uplay', action='store_true',
                              help='Activate Uplay/Ubisoft Connect titles on your Ubisoft account '
