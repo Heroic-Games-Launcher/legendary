@@ -907,6 +907,22 @@ class LegendaryCLI:
             else:
                 logger.warning(f'No asset found for platform "{args.platform}", '
                                f'trying anyway since --no-install is set.')
+        elif not args.namespace and len(game.asset_infos[args.platform]) > 1:
+            asset_infos = []
+            for asset in game.asset_infos[args.platform]:
+                namespace_info = game.namespaces.get(asset.namespace)
+                if namespace_info:
+                    asset_infos.append((namespace_info.get('sandboxType'), namespace_info.get('sandboxName'), asset.namespace))
+            type_name_str = '\n'.join([f'{_t}\t{_n}\t{_ns}' for _t,_n,_ns in asset_infos])
+            logger.error('You have access to more than one asset for this game\n'
+                         f'Type\tName\tNamespace\n'
+                         +type_name_str
+                         +'\nuse --namespace to pick one')
+            exit(1)
+        
+        if args.namespace and not args.namespace in game.namespaces:
+            logger.error("Unknown namespace")
+            exit(1)
 
         if game.is_dlc:
             logger.info('Install candidate is DLC')
@@ -993,7 +1009,7 @@ class LegendaryCLI:
         # todo use status queue to print progress from CLI
         # This has become a little ridiculous hasn't it?
         dlm, analysis, igame = self.core.prepare_download(game=game, base_game=base_game, base_path=args.base_path,
-                                                          force=args.force, max_shm=args.shared_memory,
+                                                          force=args.force, max_shm=args.shared_memory, namespace=args.namespace,
                                                           max_workers=args.max_workers, game_folder=args.game_folder,
                                                           disable_patching=args.disable_patching,
                                                           override_manifest=args.override_manifest,
@@ -1704,7 +1720,7 @@ class LegendaryCLI:
             game_infos.append(InfoItem('Title', 'title', game.app_title, game.app_title))
             game_infos.append(InfoItem('Latest version', 'version', game.app_version(args.platform),
                                        game.app_version(args.platform)))
-            all_versions = {k: v.build_version for k, v in game.asset_infos.items()}
+            all_versions = {k: '; '.join([a.build_version for a in v]) for k, v in game.asset_infos.items()}
             game_infos.append(InfoItem('All versions', 'platform_versions', all_versions, all_versions))
             # Cloud save support for Mac and Windows
             game_infos.append(InfoItem('Cloud saves supported', 'cloud_saves_supported',
@@ -1779,6 +1795,13 @@ class LegendaryCLI:
                     game_infos.append(InfoItem('Owned DLC', 'owned_dlc', None, []))
             else:
                 game_infos.append(InfoItem('Owned DLC', 'owned_dlc', None, []))
+
+            if len(game.namespaces.keys()) > 1:
+                all_namespaces = {_n['sandboxName']: '({}) - {}'.format(_n['sandboxType'], _n['namespace']) for _n in game.namespaces.values()}
+                game_infos.append(InfoItem('Namespaces', 'namespaces', all_namespaces, list(game.namespaces.values())))
+            else:
+                game_infos.append(InfoItem('Namespaces', 'namespaces', None, {}))
+
 
             igame = self.core.get_installed_game(app_name)
             if igame:
@@ -2911,6 +2934,7 @@ def main():
                                 help='Do not ask about installing DLCs.')
     install_parser.add_argument('--bind', dest='bind_ip', action='store', metavar='<IPs>', type=str,
                                 help='Comma-separated list of IPs to bind to for downloading')
+    install_parser.add_argument('--namespace', dest='namespace', help='Specify namespace to pick sandbox from which to install')
 
     uninstall_parser.add_argument('--keep-files', dest='keep_files', action='store_true',
                                   help='Keep files but remove game from Legendary database')
