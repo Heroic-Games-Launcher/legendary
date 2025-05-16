@@ -825,7 +825,7 @@ class LegendaryCore:
             f'-epicsandboxid={namespace}'
         ])
 
-        if sidecar := game.sidecars.get(namespace):
+        if sidecar := game.sidecars and game.sidecars.get(namespace):
             if deployment_id := sidecar.config.get('deploymentId', None):
                 params.egl_parameters.append(f'-epicdeploymentid={deployment_id}')
 
