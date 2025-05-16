@@ -1693,6 +1693,7 @@ class LegendaryCLI:
 
         manifest_data = None
         entitlements = None
+        namespace = args.namespace or game.namespace
         # load installed manifest or URI
         if args.offline or manifest_uri:
             if app_name and self.core.is_installed(app_name):
@@ -1708,20 +1709,21 @@ class LegendaryCLI:
                 logger.info('Game not installed and offline mode enabled, cannot load manifest.')
         elif game:
             entitlements = self.core.egs.get_user_entitlements_full()
-            egl_meta = self.core.egs.get_game_info(game.namespace, game.catalog_item_id)
+            egl_meta = self.core.egs.get_game_info(namespace, game.catalog_item_id)
             game.metadata = egl_meta
             # Get manifest if asset exists for current platform
             if args.platform in game.asset_infos:
-                manifest_data, _ = self.core.get_cdn_manifest(game, args.platform)
+                manifest_data, _ = self.core.get_cdn_manifest(game, args.platform, namespace)
 
         if game:
             game_infos = info_items['game']
             game_infos.append(InfoItem('App name', 'app_name', game.app_name, game.app_name))
             game_infos.append(InfoItem('Title', 'title', game.app_title, game.app_title))
-            game_infos.append(InfoItem('Latest version', 'version', game.app_version(args.platform),
-                                       game.app_version(args.platform)))
+            _v = game.app_version(args.platform, args.namespace)
+            game_infos.append(InfoItem('Latest version', 'version', _v, _v))
             all_versions = {k: '; '.join([a.build_version for a in v]) for k, v in game.asset_infos.items()}
-            game_infos.append(InfoItem('All versions', 'platform_versions', all_versions, all_versions))
+            all_versions_json = {k: [a.__dict__ for a in v] for k,v in game.asset_infos.items()}
+            game_infos.append(InfoItem('All versions', 'platform_versions', all_versions, all_versions_json))
             # Cloud save support for Mac and Windows
             game_infos.append(InfoItem('Cloud saves supported', 'cloud_saves_supported',
                                        game.supports_cloud_saves or game.supports_mac_cloud_saves,
@@ -1796,11 +1798,11 @@ class LegendaryCLI:
             else:
                 game_infos.append(InfoItem('Owned DLC', 'owned_dlc', None, []))
 
-            if len(game.namespaces.keys()) > 1:
+            if len(game.namespaces.keys()) > 0:
                 all_namespaces = {_n['sandboxName']: '({}) - {}'.format(_n['sandboxType'], _n['namespace']) for _n in game.namespaces.values()}
                 game_infos.append(InfoItem('Namespaces', 'namespaces', all_namespaces, list(game.namespaces.values())))
             else:
-                game_infos.append(InfoItem('Namespaces', 'namespaces', None, {}))
+                game_infos.append(InfoItem('Namespaces', 'namespaces', None, []))
 
 
             igame = self.core.get_installed_game(app_name)
@@ -3098,6 +3100,7 @@ def main():
                              help='Output information in JSON format')
     info_parser.add_argument('--platform', dest='platform', action='store', metavar='<Platform>', type=str,
                              help='Platform to fetch info for (default: installed or Mac on macOS, Windows otherwise)')
+    info_parser.add_argument('--namespace', dest='namespace', type=str, help='Specify namespace to return primary data of')
 
     activate_parser.add_argument('-s','--summary', dest='summary', action='store_true',
                                  help='Only print information about the activation status (uplay)')
