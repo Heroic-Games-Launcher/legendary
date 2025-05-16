@@ -39,7 +39,7 @@ jobs:
 
     - name: Set strip option on non-Windows
       id: strip
-      run: echo ::set-output name=option::--strip
+      run: echo "option=--strip" >> $GITHUB_OUTPUT
       if: runner.os != 'Windows'
 
     - name: Build
