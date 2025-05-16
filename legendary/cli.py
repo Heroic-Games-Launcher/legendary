@@ -921,7 +921,8 @@ class LegendaryCLI:
             exit(1)
         
         if args.namespace and not args.namespace in game.namespaces:
-            logger.error("Unknown namespace")
+            available_namespaces = '\n'.join(list(game.namespaces.keys()))
+            logger.error("Unknown namespace\n" + available_namespaces)
             exit(1)
 
         if game.is_dlc:
@@ -1009,7 +1010,7 @@ class LegendaryCLI:
         # todo use status queue to print progress from CLI
         # This has become a little ridiculous hasn't it?
         dlm, analysis, igame = self.core.prepare_download(game=game, base_game=base_game, base_path=args.base_path,
-                                                          force=args.force, max_shm=args.shared_memory, namespace=args.namespace,
+                                                          force=args.force, max_shm=args.shared_memory,
                                                           max_workers=args.max_workers, game_folder=args.game_folder,
                                                           disable_patching=args.disable_patching,
                                                           override_manifest=args.override_manifest,
@@ -1028,6 +1029,7 @@ class LegendaryCLI:
                                                           override_delta_manifest=args.override_delta_manifest,
                                                           preferred_cdn=args.preferred_cdn,
                                                           disable_https=args.disable_https,
+                                                          namespace=args.namespace,
                                                           bind_ip=args.bind_ip)
 
         # game is either up-to-date or hasn't changed, so we have nothing to do

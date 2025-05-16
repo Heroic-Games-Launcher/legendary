@@ -167,8 +167,11 @@ class Game:
             app_title=json.get('app_title', ''),
         )
         tmp.metadata = json.get('metadata', dict())
-        if 'asset_infos' in json:
-            tmp.asset_infos = {k: [GameAsset.from_json(a) for a in v] if type(v) is list else [GameAsset.from_json(v)] for k, v in json['asset_infos'].items()}
+        if 'asset_infos_v2' in json:
+            tmp.asset_infos = {k: [GameAsset.from_json(a) for a in v] for k, v in json['asset_infos_v2'].items()}
+        elif 'asset_infos' in json:
+            # Migrate from one asset per platform to multiple
+            tmp.asset_infos = {k: [GameAsset.from_json(v)] for k, v in json['asset_infos'].items()}
         else:
             # Migrate old asset_info to new asset_infos
             tmp.asset_infos['Windows'] = [GameAsset.from_json(json.get('asset_info', dict()))]
@@ -190,7 +193,7 @@ class Game:
         """This is just here so asset_infos gets turned into a dict as well"""
         assets_dictified = {k: [a.__dict__ for a in v] for k, v in self.asset_infos.items()}
         sidecars_dictified = {k: s.__dict__ for k,s in self.sidecars.items()} if self.sidecars else None
-        return dict(metadata=self.metadata, asset_infos=assets_dictified, app_name=self.app_name,
+        return dict(metadata=self.metadata, asset_infos_v2=assets_dictified, app_name=self.app_name,
                     app_title=self.app_title, base_urls=self.base_urls, sidecars=sidecars_dictified,
                     namespaces=self.namespaces)
 
