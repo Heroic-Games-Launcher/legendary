@@ -284,7 +284,7 @@ class LegendaryCLI:
         versions = dict()
         for game in games:
             try:
-                versions[game.app_name] = self.core.get_asset(game.app_name, platform=game.platform).build_version
+                versions[game.app_name] = self.core.get_asset(game.app_name, platform=game.platform, namespace=game.namespace).build_version
             except ValueError:
                 logger.warning(f'Metadata for "{game.app_name}" is missing, the game may have been removed from '
                                f'your account or not be in legendary\'s database yet, try rerunning the command '

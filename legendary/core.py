@@ -375,12 +375,12 @@ class LegendaryCore:
                 self.lgd.library_items = lib
         return self.lgd.library_items
 
-    def get_asset(self, app_name, platform='Windows', update=False) -> GameAsset:
+    def get_asset(self, app_name, platform='Windows', update=False, namespace=None) -> GameAsset:
         if update or platform not in self.lgd.assets:
             self.get_assets(update_assets=True, platform=platform)
 
         try:
-            return next(i for i in self.lgd.assets[platform] if i.app_name == app_name)
+            return next(i for i in self.lgd.assets[platform] if i.app_name == app_name and (namespace is None or i.namespace == namespace))
         except StopIteration:
             raise ValueError
 
