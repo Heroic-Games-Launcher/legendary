@@ -1708,7 +1708,7 @@ class LegendaryCore:
         return dict()
 
     def uninstall_game(self, installed_game: InstalledGame, delete_files=True, delete_root_directory=False):
-        if installed_game.egl_guid:
+        if self.egl_sync_enabled:
             self.egl_uninstall(installed_game, delete_files=delete_files)
 
         if delete_files:
