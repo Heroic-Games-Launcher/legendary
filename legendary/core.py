@@ -1684,14 +1684,19 @@ class LegendaryCore:
             return os.path.expanduser(self.lgd.config.get('Legendary', 'install_dir', fallback='~/Games'))
 
     def install_game(self, installed_game: InstalledGame) -> dict:
+        if not installed_game.egl_guid:
+            installed_game.egl_guid = str(uuid4()).replace('-', '').upper()
+
         if self.egl_sync_enabled and not installed_game.is_dlc and installed_game.platform.startswith('Win'):
-            if not installed_game.egl_guid:
-                installed_game.egl_guid = str(uuid4()).replace('-', '').upper()
             prereq = self._install_game(installed_game)
             self.egl_export(installed_game.app_name)
             return prereq
         else:
-            return self._install_game(installed_game)
+            prereq = self._install_game(installed_game)
+            game = self.lgd.get_game_meta(installed_game.app_name)
+            manifest_data, _ = self.get_installed_manifest(installed_game.app_name)
+            self._write_egstore(game, installed_game, manifest_data)
+            return prereq
 
     def _install_game(self, installed_game: InstalledGame) -> dict:
         """Save game metadata and info to mark it "installed" and also show the user the prerequisites"""
