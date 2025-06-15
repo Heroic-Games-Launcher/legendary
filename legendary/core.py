@@ -601,7 +601,7 @@ class LegendaryCore:
 
     def get_installed_game(self, app_name, skip_sync=False) -> InstalledGame:
         igame = self._get_installed_game(app_name)
-        if not skip_sync and igame and self.egl_sync_enabled and igame.egl_guid and not igame.is_dlc:
+        if not skip_sync and igame and self.egl_sync_enabled and not igame.is_dlc:
             self.egl_sync(app_name)
             return self._get_installed_game(app_name)
         else:
@@ -1946,7 +1946,6 @@ class LegendaryCore:
         if not os.path.exists(os.path.join(igame.install_path,
                                            igame.executable.lstrip('/'))):
             self.log.warning('Synced game\'s files no longer exists, assuming it has been uninstalled.')
-            igame.egl_guid = ''
             return self.uninstall_game(igame, delete_files=False)
         else:
             self.log.info('Game files exist, assuming game is still installed, re-exporting to EGL...')
@@ -1994,8 +1993,6 @@ class LegendaryCore:
 
             # Check for games that have been uninstalled
             for lgd_igame in self._get_installed_list():
-                if not lgd_igame.egl_guid:  # skip non-exported
-                    continue
                 if lgd_igame.app_name in self.egl.manifests:
                     continue
 

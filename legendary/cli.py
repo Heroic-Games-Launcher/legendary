@@ -1461,12 +1461,6 @@ class LegendaryCLI:
             logger.info('Unlinking and resetting EGS and LGD sync...')
             self.core.lgd.config.remove_option('Legendary', 'egl_programdata')
             self.core.lgd.config.remove_option('Legendary', 'egl_sync')
-            # remove EGL GUIDs from all games, DO NOT remove .egstore folders because that would fuck things up.
-            for igame in self.core.get_installed_list():
-                if not igame.egl_guid:
-                    continue
-                igame.egl_guid = ''
-                self.core.install_game(igame)
             # todo track which games were imported, remove those from LGD and exported ones from EGL
             logger.info('NOTE: All games are still available in Legendary and EGL, but future changes '
                         'will not be synced. This may cause issues when trying to update/uninstall games.')
@@ -1592,14 +1586,6 @@ class LegendaryCLI:
             logger.info('Disabling automatic sync (if enabled) and removing EGL link to finish migration...')
             self.core.lgd.config.remove_option('Legendary', 'egl_programdata')
             self.core.lgd.config.remove_option('Legendary', 'egl_sync')
-
-            for igame in self.core.get_installed_list():
-                if not igame.egl_guid:
-                    continue
-                self.core.egl_uninstall(igame)
-                igame.egl_guid = ''
-                self.core.install_game(igame)
-
             logger.info('Migration complete. Your games will now be exclusively managed by Legendary.')
         else:
             self.core.egl_sync()
