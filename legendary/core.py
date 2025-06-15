@@ -1767,6 +1767,7 @@ class LegendaryCore:
                     if mancpn['AppName'] == game.app_name:
                         self.log.info('Found EGL install metadata, verifying...')
                         mf = f.replace('.mancpn', '.manifest')
+                        egl_guid = f.replace('.mancpn', '')
                         break
             else:
                 mf = f'{egl_guid}.manifest'
