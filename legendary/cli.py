@@ -1392,6 +1392,7 @@ class LegendaryCLI:
             exe_path = case_insensitive_file_search(exe_path)
         # check if most files at least exist or if user might have specified the wrong directory
         total = len(manifest.file_manifest_list.elements)
+        # FIXME: This doesn't account for install tags
         found = sum(os.path.exists(os.path.join(args.app_path, f.filename))
                     for f in manifest.file_manifest_list.elements)
         ratio = found / total
@@ -1419,6 +1420,12 @@ class LegendaryCLI:
             logger.info(f'{"DLC" if game.is_dlc else "Game"} install appears to be complete.')
 
         self.core.install_game(igame)
+
+        if args.install_tag and not game.is_dlc:
+            config_tags = ','.join(args.install_tag)
+            logger.info(f'Saving install tags for "{game.app_name}" to config: {config_tags}')
+            self.core.lgd.config.set(game.app_name, 'install_tags', config_tags)
+
         if igame.needs_verification:
             logger.info(f'NOTE: The {"DLC" if game.is_dlc else "Game"} installation will have to be '
                         f'verified before it can be updated with legendary.')
@@ -3038,6 +3045,8 @@ def main():
                                help='Do not ask about importing DLCs.')
     import_parser.add_argument('--platform', dest='platform', action='store', metavar='<Platform>', type=str,
                                help='Platform for import (default: Mac on macOS, otherwise Windows)')
+    import_parser.add_argument('--install-tag', dest='install_tag', action='store', metavar='<tag>', type=str,
+                               help='Install tags used to install the game')
 
     egl_sync_parser.add_argument('--egl-manifest-path', dest='egl_manifest_path', action='store',
                                  help='Path to the Epic Games Launcher\'s Manifests folder, should '
