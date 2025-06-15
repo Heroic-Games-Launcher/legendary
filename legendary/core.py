@@ -1900,8 +1900,16 @@ class LegendaryCore:
         # convert to egl manifest
         egl_game = EGLManifest.from_lgd_game(lgd_game, lgd_igame)
 
+        self._write_egstore(lgd_game, lgd_igame, manifest_data)
+
+        # And finally, write the file for EGL
+        self.egl.set_manifest(egl_game)
+
+    @staticmethod
+    def _write_egstore(game: Game, igame: InstalledGame, manifest_data: bytes) -> None:
+        egl_game = EGLManifest.from_lgd_game(game, igame)
         # make sure .egstore folder exists
-        egstore_folder = os.path.join(lgd_igame.install_path, '.egstore')
+        egstore_folder = os.path.join(igame.install_path, '.egstore')
         if not os.path.exists(egstore_folder):
             os.makedirs(egstore_folder)
 
@@ -1909,14 +1917,11 @@ class LegendaryCore:
         with open(os.path.join(egstore_folder, f'{egl_game.installation_guid}.manifest', ), 'wb') as mf:
             mf.write(manifest_data)
 
-        mancpn = dict(FormatVersion=0, AppName=app_name,
-                      CatalogItemId=lgd_game.catalog_item_id,
-                      CatalogNamespace=lgd_game.namespace)
+        mancpn = dict(FormatVersion=0, AppName=game.app_name,
+                      CatalogItemId=game.catalog_item_id,
+                      CatalogNamespace=game.namespace)
         with open(os.path.join(egstore_folder, f'{egl_game.installation_guid}.mancpn', ), 'w') as mcpnf:
             json.dump(mancpn, mcpnf, indent=4, sort_keys=True)
-
-        # And finally, write the file for EGL
-        self.egl.set_manifest(egl_game)
 
     def egl_uninstall(self, igame: InstalledGame, delete_files=True):
         try:
