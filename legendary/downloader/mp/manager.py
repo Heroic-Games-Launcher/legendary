@@ -81,7 +81,8 @@ class DLManager(Process):
 
     def run_analysis(self, manifest: Manifest, old_manifest: Manifest = None,
                      patch=True, resume=True, file_prefix_filter=None,
-                     file_exclude_filter=None, file_install_tag=None,
+                     file_exclude_filter=None, file_exclude_configured=None,
+                     file_install_tag=None,
                      read_files=False,
                      processing_optimization=False) -> AnalysisResult:
         """
@@ -188,6 +189,17 @@ class DLManager(Process):
             mc.added -= files_to_skip
             mc.changed -= files_to_skip
             mc.unchanged |= files_to_skip
+        
+        if file_exclude_configured:
+            if isinstance(file_exclude_configured, str):
+                file_exclude_configured = [file_exclude_configured]
+            file_exclude_configured = [f.lower() for f in file_exclude_configured]
+            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements
+                    if i.filename.lower() in file_exclude_configured)
+            mc.added -= files_to_skip
+            mc.changed -= files_to_skip
+            mc.unchanged |= files_to_skip
+
 
         if file_prefix_filter:
             if isinstance(file_prefix_filter, str):
