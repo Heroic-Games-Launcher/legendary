@@ -2,6 +2,7 @@
 
 # please don't look at this code too hard, it's a mess.
 
+from fnmatch import fnmatch
 import logging
 import os
 import time
@@ -191,11 +192,20 @@ class DLManager(Process):
             mc.unchanged |= files_to_skip
         
         if file_exclude_configured:
+            def matches(i):
+                for pattern in file_exclude_configured:
+                    if '/' in pattern and '/' in i.filename: #If pattern contains a seperator, check dirname and basename seperately. Ensures that only files in specified directories are excluded.
+                        if os.path.dirname(i.filename).lower() == os.path.dirname(pattern) and fnmatch(os.path.basename(i.filename).lower(), os.path.basename(pattern)):
+                            return True
+                    else:
+                        if fnmatch(i.filename.lower(), pattern):
+                            return True
+                return False
+            
             if isinstance(file_exclude_configured, str):
                 file_exclude_configured = [file_exclude_configured]
             file_exclude_configured = [f.lower() for f in file_exclude_configured]
-            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements
-                    if i.filename.lower() in file_exclude_configured)
+            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements if matches(i))
             mc.added -= files_to_skip
             mc.changed -= files_to_skip
             mc.unchanged |= files_to_skip
