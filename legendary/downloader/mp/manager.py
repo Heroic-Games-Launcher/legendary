@@ -194,7 +194,7 @@ class DLManager(Process):
         if file_exclude_configured:
             def matches(i):
                 for pattern in file_exclude_configured:
-                    if '/' in i.filename and not pattern.endswith('*'): #If pattern contains a seperator, check dirname and basename seperately. Ensures that only files in specified directories are excluded.
+                    if '/' in i.filename and not pattern.endswith('*') and not pattern.startswith('*'): #If pattern contains a seperator, check dirname and basename seperately. Ensures that only files in specified directories are excluded.
                         if os.path.dirname(i.filename).lower() == os.path.dirname(pattern) and fnmatch(os.path.basename(i.filename).lower(), os.path.basename(pattern)):
                             return True
                     else:
