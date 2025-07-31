@@ -1513,7 +1513,7 @@ class LegendaryCore:
                         max_shared_memory=max_shm * 1024 * 1024, max_workers=max_workers,
                         dl_timeout=dl_timeout, bind_ip=bind_ip)
         
-        exclude_file_path = os.path.join(self.lgd.path, "exclude", game.app_name + '.exclude')
+        exclude_file_path = os.path.join(self.lgd.path, "exclude", game.app_name)
         self.log.info(f'Using exclude file if it exists: {exclude_file_path}')
 
         try:

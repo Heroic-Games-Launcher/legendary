@@ -80,6 +80,16 @@ class DLManager(Process):
         self.num_processed_since_last = 0
         self.num_tasks_processed_since_last = 0
 
+    def matches(self, file, excludelist):
+        for pattern in excludelist:
+            if '/' in file and not pattern.endswith('*') and not pattern.startswith('*'):
+                if os.path.dirname(file) == os.path.dirname(pattern) and fnmatch(os.path.basename(file), os.path.basename(pattern)):
+                    return True
+            else:
+                if fnmatch(file, pattern):
+                    return True
+        return False
+
     def run_analysis(self, manifest: Manifest, old_manifest: Manifest = None,
                      patch=True, resume=True, file_prefix_filter=None,
                      file_exclude_filter=None, file_exclude_configured=None,
@@ -96,6 +106,7 @@ class DLManager(Process):
         :param resume: Continue based on resume file if it exists
         :param file_prefix_filter: Only download files that start with this prefix
         :param file_exclude_filter: Exclude files with this prefix from download
+        :param file_exclude_configured: Exclude files based on configured patterns
         :param file_install_tag: Only install files with the specified tag
         :param read_files: Allow reading from already finished files
         :param processing_optimization: Attempt to optimize processing order and RAM usage
@@ -190,26 +201,15 @@ class DLManager(Process):
             mc.added -= files_to_skip
             mc.changed -= files_to_skip
             mc.unchanged |= files_to_skip
-        
+
         if file_exclude_configured:
-            def matches(i):
-                for pattern in file_exclude_configured:
-                    if '/' in i.filename and not pattern.endswith('*') and not pattern.startswith('*'): #If pattern contains a seperator, check dirname and basename seperately. Ensures that only files in specified directories are excluded.
-                        if os.path.dirname(i.filename).lower() == os.path.dirname(pattern) and fnmatch(os.path.basename(i.filename).lower(), os.path.basename(pattern)):
-                            return True
-                    else:
-                        if fnmatch(i.filename.lower(), pattern):
-                            return True
-                return False
-            
             if isinstance(file_exclude_configured, str):
                 file_exclude_configured = [file_exclude_configured]
             file_exclude_configured = [f.lower() for f in file_exclude_configured]
-            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements if matches(i))
+            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements if self.matches(i.filename.lower(), file_exclude_configured))
             mc.added -= files_to_skip
             mc.changed -= files_to_skip
             mc.unchanged |= files_to_skip
-
 
         if file_prefix_filter:
             if isinstance(file_prefix_filter, str):
