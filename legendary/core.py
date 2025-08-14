@@ -1011,9 +1011,9 @@ class LegendaryCore:
         if not disable_filtering:
             # get file inclusion and exclusion filters if they exist
             if (_include := custom_attr.get('CloudIncludeList', {}).get('value', None)) is not None:
-                include_f = _include.split(',')
+                include_f = list(f.strip() for f in _include.split(','))
             if (_exclude := custom_attr.get('CloudExcludeList', {}).get('value', None)) is not None:
-                exclude_f = _exclude.split(',')
+                exclude_f = list(f.strip() for f in _exclude.split(','))
 
         if not save_path and not save_path_mac:
             raise ValueError('Game does not support cloud saves')
