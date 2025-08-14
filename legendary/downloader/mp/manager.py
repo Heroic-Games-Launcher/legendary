@@ -5,6 +5,7 @@
 from fnmatch import fnmatch
 import logging
 import os
+from pathlib import PurePath
 import time
 
 from collections import Counter, defaultdict, deque
@@ -80,14 +81,11 @@ class DLManager(Process):
         self.num_processed_since_last = 0
         self.num_tasks_processed_since_last = 0
 
-    def matches(self, file, excludelist):
+    @staticmethod
+    def matches(file, excludelist):
         for pattern in excludelist:
-            if '/' in file and not pattern.endswith('*') and not pattern.startswith('*'):
-                if os.path.dirname(file) == os.path.dirname(pattern) and fnmatch(os.path.basename(file), os.path.basename(pattern)):
-                    return True
-            else:
-                if fnmatch(file, pattern):
-                    return True
+            if PurePath(file).full_match(pattern):
+                return True
         return False
 
     def run_analysis(self, manifest: Manifest, old_manifest: Manifest = None,
@@ -205,8 +203,7 @@ class DLManager(Process):
         if file_exclude_configured:
             if isinstance(file_exclude_configured, str):
                 file_exclude_configured = [file_exclude_configured]
-            file_exclude_configured = [f.lower() for f in file_exclude_configured]
-            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements if self.matches(i.filename.lower(), file_exclude_configured))
+            files_to_skip = set(i.filename for i in manifest.file_manifest_list.elements if DLManager.matches(i.filename.lower().replace('/', os.sep).replace('\\', os.sep), file_exclude_configured))
             mc.added -= files_to_skip
             mc.changed -= files_to_skip
             mc.unchanged |= files_to_skip

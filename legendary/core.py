@@ -1518,7 +1518,7 @@ class LegendaryCore:
 
         try:
             with open(exclude_file_path, 'r') as f:
-                file_exclude_configured = [line.strip() for line in f if line.strip()]
+                file_exclude_configured = [line.strip().replace('/', os.sep).replace('\\', os.sep).lower() for line in f if line.strip()]
         except Exception:
             file_exclude_configured = []
 
