@@ -1086,10 +1086,7 @@ class LegendaryCore:
             m = self.load_manifest(r.content)
 
             # download chunks required for extraction
-            chunkPaths = []
-            for chunk in m.chunk_data_list.elements:
-                chunkPaths.append(chunk.path)
-
+            chunkPaths = list(chunk.path for chunk in m.chunk_data_list.elements)
             chunkSaves = self.egs.get_user_cloud_saves(app_name=app_name, filenames=chunkPaths, manifests=False)
             chunkFiles = chunkSaves["files"]
 
