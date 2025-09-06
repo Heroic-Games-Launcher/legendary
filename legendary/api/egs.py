@@ -22,7 +22,9 @@ class EPCAPI:
     _label = 'Live-EternalKnight'
 
     _oauth_host = 'account-public-service-prod03.ol.epicgames.com'
+    # FIXME: Check whether everything using this can also use `_launcher_host_2`, then replace this with it
     _launcher_host = 'launcher-public-service-prod06.ol.epicgames.com'
+    _launcher_host_2 = 'launcher-public-service-prod.ak.epicgames.com'
     _entitlements_host = 'entitlement-public-service-prod08.ol.epicgames.com'
     _eulatracking_host = 'eulatracking-public-service-prod06.ol.epicgames.com'
     _catalog_host = 'catalog-public-service-prod06.ol.epicgames.com'
@@ -34,6 +36,7 @@ class EPCAPI:
     # _store_gql_host = 'launcher.store.epicgames.com'
     _store_gql_host = 'graphql.epicgames.com'
     _artifact_service_host = 'artifact-public-service-prod.beee.live.use1a.on.epicgames.com'
+    _artifact_delivery_service_host = 'artifact-delivery-service-public-prod.ol.epicgames.com'
 
     def __init__(self, lc='en', cc='US', timeout=10.0):
         self.log = logging.getLogger('EPCAPI')
@@ -230,6 +233,23 @@ class EPCAPI:
                               f'by-ticket/app/{artifact_id}',
                               json=dict(platform=platform, label=label, signedTicket=signed_ticket),
                               timeout=self.request_timeout)
+        r.raise_for_status()
+        return r.json()
+
+    def get_download_ticket(self, catalog_item_id: str, build_version: str, app_name: str,
+                            namespace: str, label='Live', platform='Windows'):
+        r = self.session.post(f'https://{self._launcher_host_2}/launcher/api/public/assets/v2/ticket',
+                              json=dict(catalogItemId=catalog_item_id, buildVersion=build_version, appName=app_name,
+                                        namespace=namespace, label=label, platform=platform),
+                              timeout=self.request_timeout)
+        r.raise_for_status()
+        return r.json()
+
+    def get_signed_chunk_urls(self, ticket: str, paths: list[str]) -> dict[str, str]:
+        user_id = self.user.get('account_id')
+        r = self.session.post(f'https://{self._artifact_delivery_service_host}/artifact-delivery/api/public/v1/'
+                              f'delivery/account/{user_id}/downloadurls',
+                              json=dict(signedTicket=ticket, chunkIds=paths, deltaId='', clientMetrics={}))
         r.raise_for_status()
         return r.json()
 

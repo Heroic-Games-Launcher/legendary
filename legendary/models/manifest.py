@@ -341,13 +341,13 @@ class CDL:
         self.version = 0
         self.size = 0
         self.count = 0
-        self.elements = []
+        self.elements: list[ChunkInfo] = []
         self._manifest_version = 18
         self._guid_map = None
         self._guid_int_map = None
         self._path_map = None
 
-    def get_chunk_by_path(self, path):
+    def get_chunk_by_path(self, path) -> ChunkInfo:
         if not self._path_map:
             self._path_map = dict()
             for index, chunk in enumerate(self.elements):
@@ -358,7 +358,7 @@ class CDL:
             raise ValueError(f'Invalid path! "{path}"')
         return self.elements[index]
 
-    def get_chunk_by_guid(self, guid):
+    def get_chunk_by_guid(self, guid) -> ChunkInfo:
         """
         Get chunk by GUID string or number, creates index of chunks on first call
 
@@ -372,7 +372,7 @@ class CDL:
         else:
             return self.get_chunk_by_guid_str(guid)
 
-    def get_chunk_by_guid_str(self, guid):
+    def get_chunk_by_guid_str(self, guid) -> ChunkInfo:
         if not self._guid_map:
             self._guid_map = dict()
             for index, chunk in enumerate(self.elements):
@@ -383,7 +383,7 @@ class CDL:
             raise ValueError(f'Invalid GUID! {guid}')
         return self.elements[index]
 
-    def get_chunk_by_guid_num(self, guid_int):
+    def get_chunk_by_guid_num(self, guid_int) -> ChunkInfo:
         if not self._guid_int_map:
             self._guid_int_map = dict()
             for index, chunk in enumerate(self.elements):

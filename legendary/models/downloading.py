@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import datetime
 from enum import Flag, auto
 from dataclasses import dataclass
 from typing import Optional
@@ -140,6 +141,7 @@ class AnalysisResult:
     added: int = 0
     changed: int = 0
     unchanged: int = 0
+    use_signed_url: bool = False
     manifest_comparison: Optional[ManifestComparison] = None
 
 
@@ -158,3 +160,22 @@ class TerminateWorkerTask:
     """
     pass
 
+@dataclass
+class DownloadTicket:
+    """
+    Ticket to use for requesting signed chunk URLs
+    """
+    signedTicket: str
+    expiresAt: datetime.datetime
+
+    @classmethod
+    def from_json(cls, data: dict):
+        return cls(data['signedTicket'], datetime.datetime.fromisoformat(data['expiresAt']))
+
+    @property
+    def remaining_time(self) -> datetime.timedelta:
+        return self.expiresAt - datetime.datetime.now(self.expiresAt.tzinfo)
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expiresAt < datetime.datetime.now(self.expiresAt.tzinfo)
