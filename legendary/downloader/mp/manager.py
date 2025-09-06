@@ -46,14 +46,14 @@ class DLManager(Process):
         self.bind_ips = [] if not bind_ip else bind_ip.split(',')
 
         # Analysis stuff
-        self.analysis = None
-        self.tasks = deque()
-        self.chunks_to_dl = deque()
-        self.chunk_data_list = None
+        self.analysis: Optional[AnalysisResult] = None
+        self.tasks: deque[FileTask | ChunkTask] = deque()
+        self.chunks_to_dl: deque[int] = deque()
+        self.chunk_data_list: Optional[CDL] = None
 
         # shared memory stuff
         self.max_shared_memory = max_shared_memory  # 1 GiB by default
-        self.sms = deque()
+        self.sms: deque[SharedMemorySegment] = deque()
         self.shared_memory = None
 
         # Interval for log updates and pushing updates to the queue

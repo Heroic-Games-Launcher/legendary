@@ -1341,7 +1341,7 @@ class LegendaryCore:
                          repair: bool = False, repair_use_latest: bool = False,
                          disable_delta: bool = False, override_delta_manifest: str = '',
                          egl_guid: str = '', preferred_cdn: str = None,
-                         disable_https: bool = False, bind_ip: str = None) -> (DLManager, AnalysisResult, ManifestMeta):
+                         disable_https: bool = False, bind_ip: str = None) -> tuple[DLManager, AnalysisResult, InstalledGame]:
         # load old manifest
         old_manifest = None
 
