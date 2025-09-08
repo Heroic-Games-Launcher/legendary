@@ -2080,9 +2080,10 @@ class LegendaryCore:
         else:
             path = path or os.path.join(self.get_default_install_dir(), '.overlay')
 
-        # TODO: Verify that we can call `get_asset` here
-        asset = self.get_asset(EOSOverlayApp.app_name)
-        dlm = DLManager(path, base_urls[0], use_signed_urls, asset)
+        if use_signed_urls:
+            raise ValueError('EOS Overlay requiring signed URLs, not sure what to do here')
+
+        dlm = DLManager(path, base_urls[0], use_signed_urls, GameAsset())
         analysis_result = dlm.run_analysis(manifest=manifest)
 
         install_size = analysis_result.install_size
