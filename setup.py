@@ -36,6 +36,7 @@ setup(
     ),
     install_requires=[
         'requests<3.0',
+        'requests_futures',
         'setuptools',
         'wheel',
         'filelock'

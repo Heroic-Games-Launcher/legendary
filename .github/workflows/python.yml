@@ -31,6 +31,7 @@ jobs:
         setuptools
         pyinstaller
         requests
+        requests_futures
         filelock
 
     - name: Optional dependencies (WebView)
