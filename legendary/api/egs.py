@@ -167,8 +167,9 @@ class EPCAPI:
         return r.json()
 
     def get_game_assets(self, platform='Windows', label='Live'):
+        forced_timeout = 60.0
         r = self.session.get(f'https://{self._launcher_host}/launcher/api/public/assets/{platform}',
-                             params=dict(label=label), timeout=self.request_timeout)
+                             params=dict(label=label), timeout=forced_timeout)  # placed 60 second timeout
         r.raise_for_status()
         return r.json()
 
