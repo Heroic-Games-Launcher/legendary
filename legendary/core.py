@@ -346,7 +346,7 @@ class LegendaryCore:
         if _aliases_enabled and (force or not self.lgd.aliases):
             self.lgd.generate_aliases()
 
-    def get_assets(self, update_assets=False, platform='Windows') -> List[GameAsset]:
+    def get_assets(self, update_assets=False, platform='Windows', asset_timeout=None) -> List[GameAsset]:
         # do not save and always fetch list when platform is overridden
         if not self.lgd.assets or update_assets or platform not in self.lgd.assets:
             # if not logged in, return empty list
@@ -358,7 +358,7 @@ class LegendaryCore:
             assets.update({
                 platform: [
                     GameAsset.from_egs_json(a) for a in
-                    self.egs.get_game_assets(platform=platform)
+                    self.egs.get_game_assets(platform=platform, timeout=asset_timeout)
                 ]
             })
 
@@ -368,9 +368,9 @@ class LegendaryCore:
 
         return self.lgd.assets[platform]
 
-    def get_asset(self, app_name, platform='Windows', update=False) -> GameAsset:
+    def get_asset(self, app_name, platform='Windows', update=False, asset_timeout=None) -> GameAsset:
         if update or platform not in self.lgd.assets:
-            self.get_assets(update_assets=True, platform=platform)
+            self.get_assets(update_assets=True, platform=platform, asset_timeout=asset_timeout)
 
         try:
             return next(i for i in self.lgd.assets[platform] if i.app_name == app_name)
@@ -397,11 +397,11 @@ class LegendaryCore:
             self.get_game_list(True, platform=platform)
         return self.lgd.get_game_meta(app_name)
 
-    def get_game_list(self, update_assets=True, platform='Windows') -> List[Game]:
-        return self.get_game_and_dlc_list(update_assets=update_assets, platform=platform)[0]
+    def get_game_list(self, update_assets=True, platform='Windows', asset_timeout=None) -> List[Game]:
+        return self.get_game_and_dlc_list(update_assets=update_assets, platform=platform, asset_timeout=asset_timeout)[0]
 
     def get_game_and_dlc_list(self, update_assets=True, platform='Windows',
-                              force_refresh=False, skip_ue=True) -> (List[Game], Dict[str, List[Game]]):
+                              force_refresh=False, skip_ue=True, asset_timeout=None) -> (List[Game], Dict[str, List[Game]]):
         _ret = []
         _dlc = defaultdict(list)
         meta_updated = False
@@ -412,7 +412,7 @@ class LegendaryCore:
         platforms |= self.get_installed_platforms()
 
         for _platform in platforms:
-            self.get_assets(update_assets=update_assets, platform=_platform)
+            self.get_assets(update_assets=update_assets, platform=_platform, asset_timeout=asset_timeout)
 
         if not self.lgd.assets:
             return _ret, _dlc

@@ -166,9 +166,11 @@ class EPCAPI:
         r.raise_for_status()
         return r.json()
 
-    def get_game_assets(self, platform='Windows', label='Live'):
+    def get_game_assets(self, platform='Windows', label='Live', timeout=None):
+        effective_timeout = timeout or self.request_timeout
+
         r = self.session.get(f'https://{self._launcher_host}/launcher/api/public/assets/{platform}',
-                             params=dict(label=label), timeout=self.request_timeout)
+                             params=dict(label=label), timeout=effective_timeout)
         r.raise_for_status()
         return r.json()
 
