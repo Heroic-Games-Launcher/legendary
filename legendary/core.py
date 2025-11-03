@@ -1326,12 +1326,13 @@ class LegendaryCore:
                          game_folder: str = '', override_manifest: str = '',
                          override_old_manifest: str = '', override_base_url: str = '',
                          platform: str = 'Windows', file_prefix_filter: list = None,
-                         file_exclude_filter: list = None, file_install_tag: list = None,
-                         dl_optimizations: bool = False, dl_timeout: int = 10,
-                         repair: bool = False, repair_use_latest: bool = False,
-                         disable_delta: bool = False, override_delta_manifest: str = '',
-                         egl_guid: str = '', preferred_cdn: str = None,
-                         disable_https: bool = False, bind_ip: str = None) -> (DLManager, AnalysisResult, ManifestMeta):
+                         file_suffix_filter: list = None, file_exclude_filter: list = None,
+                         file_install_tag: list = None, dl_optimizations: bool = False,
+                         dl_timeout: int = 10, repair: bool = False,
+                         repair_use_latest: bool = False, disable_delta: bool = False,
+                         override_delta_manifest: str = '', egl_guid: str = '',
+                         preferred_cdn: str = None, disable_https: bool = False,
+                         bind_ip: str = None) -> (DLManager, AnalysisResult, ManifestMeta):
         # load old manifest
         old_manifest = None
 
@@ -1502,6 +1503,7 @@ class LegendaryCore:
         anlres = dlm.run_analysis(manifest=new_manifest, old_manifest=old_manifest,
                                   patch=not disable_patching, resume=not force,
                                   file_prefix_filter=file_prefix_filter,
+                                  file_suffix_filter=file_suffix_filter,
                                   file_exclude_filter=file_exclude_filter,
                                   file_install_tag=file_install_tag,
                                   processing_optimization=process_opt)

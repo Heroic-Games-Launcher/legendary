@@ -969,6 +969,7 @@ class LegendaryCLI:
                                                           override_base_url=args.override_base_url,
                                                           platform=args.platform,
                                                           file_prefix_filter=args.file_prefix,
+                                                          file_suffix_filter=args.file_suffix,
                                                           file_exclude_filter=args.file_exclude_prefix,
                                                           file_install_tag=args.install_tag,
                                                           dl_optimizations=args.order_opt,
@@ -2764,6 +2765,8 @@ def main():
                                 help='Platform for install (default: installed or Windows)')
     install_parser.add_argument('--prefix', dest='file_prefix', action='append', metavar='<prefix>',
                                 help='Only fetch files whose path starts with <prefix> (case insensitive)')
+    install_parser.add_argument('--suffix', dest='file_suffix', action='append', metavar='<suffix>',
+                                help='Only fetch files whose path ends with <prefix> (case insensitive)')
     install_parser.add_argument('--exclude', dest='file_exclude_prefix', action='append', metavar='<prefix>',
                                 type=str, help='Exclude files starting with <prefix> (case insensitive)')
     install_parser.add_argument('--install-tag', dest='install_tag', action='append', metavar='<tag>',
