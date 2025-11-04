@@ -27,7 +27,7 @@ from legendary.utils.custom_parser import HiddenAliasSubparsersAction
 from legendary.utils.env import is_windows_mac_or_pyi
 from legendary.lfs.eos import add_registry_entries, query_registry_entries, remove_registry_entries
 from legendary.lfs.utils import validate_files, clean_filename
-from legendary.utils.selective_dl import get_sdl_appname
+from legendary.utils.selective_dl import get_sdl_data
 from legendary.lfs.wine_helpers import read_registry, get_shell_folders, case_insensitive_file_search
 
 # todo custom formatter for cli logger (clean info, highlighted error/warning)
@@ -912,8 +912,8 @@ class LegendaryCLI:
                 logger.info(f'Using existing repair file: {repair_file}')
 
         # check if SDL should be disabled
-        sdl_enabled = not args.install_tag and not game.is_dlc
-        config_tags = self.core.lgd.config.get(game.app_name, 'install_tags', fallback=None)
+        sdl_enabled = not args.install_tag
+        config_tags = self.core.lgd.config.get(game.app_name, 'install_opts', fallback=None)
         config_disable_sdl = self.core.lgd.config.getboolean(game.app_name, 'disable_sdl', fallback=False)
         # remove config flag if SDL is reset
         if config_disable_sdl and args.reset_sdl and not args.disable_sdl:
@@ -930,19 +930,20 @@ class LegendaryCLI:
         elif config_disable_sdl or args.disable_sdl:
             sdl_enabled = False
 
-        if sdl_enabled and ((sdl_name := get_sdl_appname(game.app_name)) is not None):
+        if sdl_enabled:
             if not self.core.is_installed(game.app_name) or config_tags is None or args.reset_sdl:
-                sdl_data = self.core.get_sdl_data(sdl_name, platform=args.platform)
+                sdl_data = get_sdl_data(self.core.lgd.egl_content_path, game.app_name, game.app_version(args.platform))
                 if sdl_data:
                     if args.skip_sdl:
-                        args.install_tag = ['']
-                        if '__required' in sdl_data:
-                            args.install_tag.extend(sdl_data['__required']['tags'])
+                        args.install_tag = []
+                        for entry in sdl_data['Data']:
+                            if entry.get('IsRequired', 'false').lower() == 'true':
+                                args.install_tag.extend(entry.get('Tags', []))
                     else:
                         args.install_tag = sdl_prompt(sdl_data, game.app_title)
-                    self.core.lgd.config.set(game.app_name, 'install_tags', ','.join(args.install_tag))
+                    # self.core.lgd.config.set(game.app_name, 'install_tags', ','.join(args.install_tag))
                 else:
-                    logger.error(f'Unable to get SDL data for {sdl_name}')
+                    logger.error(f'Unable to get SDL data for {game.app_name}')
             else:
                 args.install_tag = config_tags.split(',')
         elif args.install_tag and not game.is_dlc and not args.no_install:
