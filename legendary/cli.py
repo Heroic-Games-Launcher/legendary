@@ -27,7 +27,7 @@ from legendary.utils.custom_parser import HiddenAliasSubparsersAction
 from legendary.utils.env import is_windows_mac_or_pyi
 from legendary.lfs.eos import add_registry_entries, query_registry_entries, remove_registry_entries
 from legendary.lfs.utils import validate_files, clean_filename
-from legendary.utils.selective_dl import get_sdl_data
+from legendary.utils.selective_dl import get_sdl_data, LGDEvaluationContext
 from legendary.lfs.wine_helpers import read_registry, get_shell_folders, case_insensitive_file_search
 
 # todo custom formatter for cli logger (clean info, highlighted error/warning)
@@ -931,7 +931,9 @@ class LegendaryCLI:
             sdl_enabled = False
 
         if sdl_enabled:
+            # FIXME: Consider UpgradePathLogic - it lets automatically select options in new manifests when corresponding option was selected with older version
             if not self.core.is_installed(game.app_name) or config_tags is None or args.reset_sdl:
+                context = LGDEvaluationContext(self.core)
                 sdl_data = get_sdl_data(self.core.lgd.egl_content_path, game.app_name, game.app_version(args.platform))
                 if sdl_data:
                     if args.skip_sdl:
@@ -940,7 +942,7 @@ class LegendaryCLI:
                             if entry.get('IsRequired', 'false').lower() == 'true':
                                 args.install_tag.extend(entry.get('Tags', []))
                     else:
-                        args.install_tag = sdl_prompt(sdl_data, game.app_title)
+                        args.install_tag = sdl_prompt(sdl_data, game.app_title, context)
                     # self.core.lgd.config.set(game.app_name, 'install_tags', ','.join(args.install_tag))
                 else:
                     logger.error(f'Unable to get SDL data for {game.app_name}')
@@ -949,7 +951,6 @@ class LegendaryCLI:
         elif args.install_tag and not game.is_dlc and not args.no_install:
             config_tags = ','.join(args.install_tag)
             logger.info(f'Saving install tags for "{game.app_name}" to config: {config_tags}')
-            self.core.lgd.config.set(game.app_name, 'install_tags', config_tags)
         elif not game.is_dlc:
             if config_tags and args.reset_sdl:
                 logger.info('Clearing install tags from config.')
@@ -957,7 +958,8 @@ class LegendaryCLI:
             elif config_tags:
                 logger.info(f'Using install tags from config: {config_tags}')
                 args.install_tag = config_tags.split(',')
-
+        
+        logger.debug(f'Selected tags: {args.install_tag}')
         logger.info(f'Preparing download for "{game.app_title}" ({game.app_name})...')
         # todo use status queue to print progress from CLI
         # This has become a little ridiculous hasn't it?

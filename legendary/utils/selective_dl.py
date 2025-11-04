@@ -5,6 +5,24 @@ import os
 import json
 from epic_expreval import Tokenizer, EvaluationContext
 
+def has_access(context, app):
+    return bool(context.core.get_game(app))
+
+def is_selected(context, input):
+    return input in context.selection
+
+EXTRA_FUNCTIONS = {'HasAccess': has_access, "IsComponentSelected": is_selected}
+
+class LGDEvaluationContext(EvaluationContext):
+    def __init__(self, core):
+        super().__init__()
+        self.core = core
+        self.selection = set()
+
+    def reset(self):
+        super().reset()
+        self.selection = set()
+
 def run_expression(expression, input):
     """Runs expression with default EvauluationContext"""
     tk = Tokenizer(expression, EvaluationContext())
