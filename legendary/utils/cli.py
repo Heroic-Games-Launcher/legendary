@@ -51,8 +51,6 @@ def get_int_choice(prompt, default=None, min_choice=None, max_choice=None, retur
 
 
 def sdl_prompt(sdl_data, title, context):
-    tags = set()
-
     print(f'You are about to install {title}, this application supports selective downloads.')
     choices = []
     required_categories = {}
@@ -86,27 +84,7 @@ def sdl_prompt(sdl_data, title, context):
                                        choices=choices,
                                        cycle=True,
                                        validate=lambda selected: not required_categories or all(any(item in selected for item in category) for category in required_categories.values())).execute()
-    context.selection = set(selected_packs)
-
-    for element in sdl_data['Data']:
-        if element.get('IsRequired', 'false').lower() == 'true':
-            tags.update(element.get('Tags', []))
-            continue
-        if element.get('Invisible', 'false').lower() == 'true':
-            tk = Tokenizer(element['InvisibleSelectedExpression'], context)
-            tk.extend_functions(EXTRA_FUNCTIONS)
-            tk.compile()
-            if tk.execute(''):
-                tags.update(element.get('Tags', []))
-        
-        if element['UniqueId'] in selected_packs:
-            tags.update(element.get('Tags', []))
-        if element.get('ConfigHandler'):
-            for child in element.get('Children', []):
-                if child['UniqueId'] in selected_packs:
-                    tags.update(child.get('Tags', []))
-        
-    return list(tags)
+    return selected_packs
 
 
 def strtobool(val):

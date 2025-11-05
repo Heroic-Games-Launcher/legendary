@@ -16,6 +16,7 @@ from logging.handlers import QueueListener
 from multiprocessing import freeze_support, Queue as MPQueue
 from platform import platform
 from sys import exit, stdout, platform as sys_platform
+from epic_expreval import Tokenizer
 
 from legendary import __version__, __codename__
 from legendary.core import LegendaryCore
@@ -27,7 +28,7 @@ from legendary.utils.custom_parser import HiddenAliasSubparsersAction
 from legendary.utils.env import is_windows_mac_or_pyi
 from legendary.lfs.eos import add_registry_entries, query_registry_entries, remove_registry_entries
 from legendary.lfs.utils import validate_files, clean_filename
-from legendary.utils.selective_dl import get_sdl_data, LGDEvaluationContext
+from legendary.utils.selective_dl import get_sdl_data, LGDEvaluationContext, EXTRA_FUNCTIONS
 from legendary.lfs.wine_helpers import read_registry, get_shell_folders, case_insensitive_file_search
 
 # todo custom formatter for cli logger (clean info, highlighted error/warning)
@@ -911,55 +912,59 @@ class LegendaryCLI:
             else:
                 logger.info(f'Using existing repair file: {repair_file}')
 
-        # check if SDL should be disabled
-        sdl_enabled = not args.install_tag
-        config_tags = self.core.lgd.config.get(game.app_name, 'install_opts', fallback=None)
-        config_disable_sdl = self.core.lgd.config.getboolean(game.app_name, 'disable_sdl', fallback=False)
-        # remove config flag if SDL is reset
-        if config_disable_sdl and args.reset_sdl and not args.disable_sdl:
-            self.core.lgd.config.remove_option(game.app_name, 'disable_sdl')
-        # if config flag is not yet set, set it and remove previous install tags
-        elif not config_disable_sdl and args.disable_sdl:
-            logger.info('Clearing install tags from config and disabling SDL for title.')
-            if config_tags:
-                self.core.lgd.config.remove_option(game.app_name, 'install_tags')
-                config_tags = None
-            self.core.lgd.config.set(game.app_name, 'disable_sdl', 'true')
-            sdl_enabled = False
-        # just disable SDL, but keep config tags that have been manually specified
-        elif config_disable_sdl or args.disable_sdl:
-            sdl_enabled = False
-
-        if sdl_enabled:
-            # FIXME: Consider UpgradePathLogic - it lets automatically select options in new manifests when corresponding option was selected with older version
-            if not self.core.is_installed(game.app_name) or config_tags is None or args.reset_sdl:
-                context = LGDEvaluationContext(self.core)
-                sdl_data = get_sdl_data(self.core.lgd.egl_content_path, game.app_name, game.app_version(args.platform))
-                if sdl_data:
-                    if args.skip_sdl:
-                        args.install_tag = []
-                        for entry in sdl_data['Data']:
-                            if entry.get('IsRequired', 'false').lower() == 'true':
-                                args.install_tag.extend(entry.get('Tags', []))
-                    else:
-                        args.install_tag = sdl_prompt(sdl_data, game.app_title, context)
-                    # self.core.lgd.config.set(game.app_name, 'install_tags', ','.join(args.install_tag))
-                else:
-                    logger.error(f'Unable to get SDL data for {game.app_name}')
+        logger.info('Checking for install components')
+        config_options = self.core.lgd.config.get(game.app_name, 'install_components', fallback=None)
+        install_components = args.install_component or []
+        sdl_data = get_sdl_data(self.core.lgd.egl_content_path, game.app_name, game.app_version(args.platform))
+        context = LGDEvaluationContext(self.core)
+        if not self.core.is_installed(game.app_name) or config_options is None or args.reset_sdl:
+            if sdl_data:
+                if not args.skip_sdl:
+                    install_components = sdl_prompt(sdl_data, game.app_title, context)
             else:
-                args.install_tag = config_tags.split(',')
-        elif args.install_tag and not game.is_dlc and not args.no_install:
-            config_tags = ','.join(args.install_tag)
-            logger.info(f'Saving install tags for "{game.app_name}" to config: {config_tags}')
-        elif not game.is_dlc:
-            if config_tags and args.reset_sdl:
-                logger.info('Clearing install tags from config.')
-                self.core.lgd.config.remove_option(game.app_name, 'install_tags')
-            elif config_tags:
-                logger.info(f'Using install tags from config: {config_tags}')
-                args.install_tag = config_tags.split(',')
-        
-        logger.debug(f'Selected tags: {args.install_tag}')
+                logger.error(f'Unable to get SDL data for {game.app_name}')
+        else:
+            install_components = config_options.split(',')
+        context.selection = set(install_components)
+            
+        install_tags = set()
+        if sdl_data:
+            for element in sdl_data['Data']:
+                if element.get('IsRequired', 'false').lower() == 'true':
+                    install_tags.update(element.get('Tags', []))
+                    if element['UniqueId'] not in install_components:
+                        install_components.append(element['UniqueId'])
+                    continue
+                if element.get('Invisible', 'false').lower() == 'true':
+                    tk = Tokenizer(element['InvisibleSelectedExpression'], context)
+                    tk.extend_functions(EXTRA_FUNCTIONS)
+                    tk.compile()
+                    if tk.execute(''):
+                        logger.info('Selecting invisible component')
+                        install_tags.update(element.get('Tags', []))
+                        if element['UniqueId'] not in install_components:
+                            install_components.append(element['UniqueId'])
+
+                # The ids may change from revision to revision, this property lets us match options against older options
+                upgrade_id = element.get('UpgradePathLogic')
+                if upgrade_id and upgrade_id in install_components:
+                    install_tags.update(element.get('Tags', []))
+                    # Replace component id with upgraded one
+                    install_components = [element['UniqueId'] if el == upgrade_id else el for el in install_components]
+
+                if element['UniqueId'] in install_components:
+                    install_tags.update(element.get('Tags', []))
+
+                if element.get('ConfigHandler'):
+                    for child in element.get('Children', []):
+                        if child['UniqueId'] in install_components:
+                            install_tags.update(child.get('Tags', []))
+
+        if install_components:
+            self.core.lgd.config.set(game.app_name, 'install_components', ','.join(install_components))
+        install_tags = list(install_tags)
+        logger.debug(f'Selected components: {install_components}')
+        logger.debug(f'Selected tags: {install_tags}')
         logger.info(f'Preparing download for "{game.app_title}" ({game.app_name})...')
         # todo use status queue to print progress from CLI
         # This has become a little ridiculous hasn't it?
@@ -974,7 +979,8 @@ class LegendaryCLI:
                                                           file_prefix_filter=args.file_prefix,
                                                           file_suffix_filter=args.file_suffix,
                                                           file_exclude_filter=args.file_exclude_prefix,
-                                                          file_install_tag=args.install_tag,
+                                                          file_install_tag=install_tags,
+                                                          game_install_components=install_components,
                                                           dl_optimizations=args.order_opt,
                                                           dl_timeout=args.dl_timeout,
                                                           repair=args.repair_mode,
@@ -1646,6 +1652,7 @@ class LegendaryCLI:
                            f'not being available on the selected platform or currently logged-in account.')
             args.offline = True
 
+        sdl_data = get_sdl_data(self.core.lgd.egl_content_path, app_name, game.app_version(args.platform)) or {}
         manifest_data = None
         entitlements = None
         # load installed manifest or URI
@@ -1765,11 +1772,11 @@ class LegendaryCLI:
                                                   igame.save_path))
                 installation_info.append(InfoItem('EGL sync GUID', 'synced_egl_guid', igame.egl_guid,
                                                   igame.egl_guid))
-                if igame.install_tags:
-                    tags = ', '.join(igame.install_tags)
+                if igame.install_components:
+                    opts = ', '.join(igame.install_components)
                 else:
-                    tags = '(None, all game data selected for install)'
-                installation_info.append(InfoItem('Install tags', 'install_tags', tags, igame.install_tags))
+                    opts = '(None, all game data selected for install)'
+                installation_info.append(InfoItem('Install components', 'install_components', opts, igame.install_components))
                 installation_info.append(InfoItem('Requires ownership verification token (DRM)', 'requires_ovt',
                                                   igame.requires_ot, igame.requires_ot))
 
@@ -1843,9 +1850,23 @@ class LegendaryCLI:
                 for tag in fm.install_tags:
                     install_tags.add(tag)
 
-            install_tags = sorted(install_tags)
-            install_tags_human = ', '.join(i if i else '(empty)' for i in install_tags)
-            manifest_info.append(InfoItem('Install tags', 'install_tags', install_tags_human, install_tags))
+            if sdl_data:
+                install_tags_human = []
+                for element in sdl_data['Data']:
+                    if not element.get('Title'):
+                        continue
+                    is_required = element.get('IsRequired','false')=='true'
+                    required_txt = ' (required)' if is_required else ''
+                    if element.get('Children'):
+                        install_tags_human.append(f'{element["Title"]}{required_txt}')
+                        for child in element.get('Children', []):
+                            install_tags_human.append(f'\t{child["UniqueId"]} - {child["Title"]}')
+                    else:
+                        install_tags_human.append(f'{element["UniqueId"]} - {element["Title"]}{required_txt}')
+            else:
+                install_tags_human = '(none)'
+            
+            manifest_info.append(InfoItem('Install components', 'install_components', install_tags_human, sdl_data.get('Data')))
             # file and chunk count
             manifest_info.append(InfoItem('Files', 'num_files', manifest.file_manifest_list.count,
                                           manifest.file_manifest_list.count))
@@ -1862,6 +1883,7 @@ class LegendaryCLI:
                                           chunk_size, total_size))
 
             # if there are install tags break down size by tag
+            """
             tag_disk_size = []
             tag_disk_size_human = []
             tag_download_size = []
@@ -1896,6 +1918,7 @@ class LegendaryCLI:
                                           tag_disk_size_human or 'N/A', tag_disk_size))
             manifest_info.append(InfoItem('Download size by install tag', 'tag_download_size',
                                           tag_download_size_human or 'N/A', tag_download_size))
+            """
 
         if not args.json:
             def print_info_item(item: InfoItem):
@@ -2772,8 +2795,8 @@ def main():
                                 help='Only fetch files whose path ends with <prefix> (case insensitive)')
     install_parser.add_argument('--exclude', dest='file_exclude_prefix', action='append', metavar='<prefix>',
                                 type=str, help='Exclude files starting with <prefix> (case insensitive)')
-    install_parser.add_argument('--install-tag', dest='install_tag', action='append', metavar='<tag>',
-                                type=str, help='Only download files with the specified install tag')
+    install_parser.add_argument('--install-component', dest='install_component', action='append', metavar='<id>',
+                                type=str, help='Only download files with the specified optional download id')
     install_parser.add_argument('--enable-reordering', dest='order_opt', action='store_true',
                                 help='Enable reordering optimization to reduce RAM requirements '
                                      'during download (may have adverse results for some titles)')
@@ -2902,8 +2925,8 @@ def main():
     list_files_parser.add_argument('--json', dest='json', action='store_true', help='Output in JSON format')
     list_files_parser.add_argument('--hashlist', dest='hashlist', action='store_true',
                                    help='Output file hash list in hashcheck/sha1sum -c compatible format')
-    list_files_parser.add_argument('--install-tag', dest='install_tag', action='store', metavar='<tag>',
-                                   type=str, help='Show only files with specified install tag')
+    list_files_parser.add_argument('--install-component', dest='install_component', action='store', metavar='<id>',
+                                   type=str, help='Show only files with specified optional download id')
 
     sync_saves_parser.add_argument('--skip-upload', dest='download_only', action='store_true',
                                    help='Only download new saves from cloud, don\'t upload')

@@ -1349,7 +1349,7 @@ class LegendaryCore:
                          repair_use_latest: bool = False, disable_delta: bool = False,
                          override_delta_manifest: str = '', egl_guid: str = '',
                          preferred_cdn: str = None, disable_https: bool = False,
-                         bind_ip: str = None) -> (DLManager, AnalysisResult, ManifestMeta):
+                         bind_ip: str = None, game_install_components: list = None) -> (DLManager, AnalysisResult, ManifestMeta):
         # load old manifest
         old_manifest = None
 
@@ -1558,6 +1558,7 @@ class LegendaryCore:
                               can_run_offline=offline == 'true', requires_ot=ot == 'true',
                               is_dlc=base_game is not None, install_size=anlres.install_size,
                               egl_guid=egl_guid, install_tags=file_install_tag,
+                              install_components=game_install_components,
                               platform=platform, uninstaller=uninstaller)
 
         return dlm, anlres, igame
@@ -1871,9 +1872,10 @@ class LegendaryCore:
                                version=new_manifest.meta.build_version,
                                platform='Windows')
 
+        # TODO: Migrate this to components instead?
         # transfer install tag choices to config
-        if lgd_igame.install_tags:
-            self.lgd.config.set(app_name, 'install_tags', ','.join(lgd_igame.install_tags))
+        #if lgd_igame.install_tags:
+        #    self.lgd.config.set(app_name, 'install_tags', ','.join(lgd_igame.install_tags))
 
         # mark game as installed
         _ = self._install_game(lgd_igame)
