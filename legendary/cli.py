@@ -200,9 +200,13 @@ class LegendaryCLI:
         else:
             logger.info('Getting game list... (this may take a while)')
 
+        # Übergib asset_timeout an die Core-Funktion
+        asset_timeout = getattr(args, 'asset_timeout', None)
+
         games, dlc_list = self.core.get_game_and_dlc_list(
             platform=args.platform, skip_ue=not args.include_ue,
-            force_refresh=args.force_refresh
+            force_refresh=args.force_refresh,
+            asset_timeout=getattr(args, 'asset_timeout', None)
         )
         # Get information for games that cannot be installed through legendary (yet), such
         # as games that have to be activated on and launched through Origin.
@@ -2825,6 +2829,11 @@ def main():
                                           description='Note: additional arguments are passed to the game')
     list_parser = subparsers.add_parser('list', aliases=('list-games',), hide_aliases=True,
                                         help='List available (installable) games')
+
+    list_parser.add_argument('--asset-timeout', dest='asset_timeout', action='store',
+                             type=float, metavar='<seconds>',
+                             help='Timeout for asset requests in seconds (default: 10)')
+
     list_files_parser = subparsers.add_parser('list-files', help='List files in manifest')
     list_installed_parser = subparsers.add_parser('list-installed', help='List installed games')
     list_saves_parser = subparsers.add_parser('list-saves', help='List available cloud saves')
