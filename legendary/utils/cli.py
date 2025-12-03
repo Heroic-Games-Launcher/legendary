@@ -55,7 +55,10 @@ def sdl_prompt(sdl_data, title, context):
     choices = []
     required_categories = {}
     for element in sdl_data['Data']:
-        if (element.get('IsRequired', 'false').lower() == 'true' and not 'Children' in element) or element.get('Invisible', 'false').lower() == 'true':
+        is_required = element.get('IsRequired', 'false').lower() == 'true'
+        has_children = 'Children' in element
+        is_invisible = element.get('Invisible', 'false').lower() == 'true'
+        if (is_required and not has_children) or is_invisible:
             continue
         
         if element.get('ConfigHandler'):
