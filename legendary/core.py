@@ -450,7 +450,7 @@ class LegendaryCore:
 
         def fetch_game_meta(args):
             app_name, namespace, catalog_item_id, update_sidecar = args
-            eg_meta = self.egs.get_game_info(namespace, catalog_item_id, timeout=10.0)
+            eg_meta = self.egs.get_game_info(namespace, catalog_item_id, timeout=30.0)
             if not eg_meta:
                 self.log.warning(f'App {app_name} does not have any metadata!')
                 eg_meta = dict(title='Unknown')
@@ -555,7 +555,7 @@ class LegendaryCore:
 
             game = self.lgd.get_game_meta(libitem['appName'])
             if not game or force_refresh:
-                eg_meta = self.egs.get_game_info(libitem['namespace'], libitem['catalogItemId'])
+                eg_meta = self.egs.get_game_info(libitem['namespace'], libitem['catalogItemId'], timeout=30)
                 game = Game(app_name=libitem['appName'], app_title=eg_meta['title'], metadata=eg_meta)
                 self.lgd.set_game_meta(game.app_name, game)
 
