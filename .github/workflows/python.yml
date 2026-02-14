@@ -55,5 +55,5 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.os }}-package
+        name: ${{ runner.os }}-${{ runner.arch }}-package
         path: legendary/dist/*
