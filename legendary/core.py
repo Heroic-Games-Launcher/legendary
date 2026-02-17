@@ -601,7 +601,7 @@ class LegendaryCore:
 
     def get_installed_game(self, app_name, skip_sync=False) -> InstalledGame:
         igame = self._get_installed_game(app_name)
-        if not skip_sync and igame and self.egl_sync_enabled and igame.egl_guid and not igame.is_dlc:
+        if not skip_sync and igame and self.egl_sync_enabled and not igame.is_dlc:
             self.egl_sync(app_name)
             return self._get_installed_game(app_name)
         else:
@@ -1701,14 +1701,19 @@ class LegendaryCore:
             return os.path.expanduser(self.lgd.config.get('Legendary', 'install_dir', fallback='~/Games'))
 
     def install_game(self, installed_game: InstalledGame) -> dict:
+        if not installed_game.egl_guid:
+            installed_game.egl_guid = str(uuid4()).replace('-', '').upper()
+
         if self.egl_sync_enabled and not installed_game.is_dlc and installed_game.platform.startswith('Win'):
-            if not installed_game.egl_guid:
-                installed_game.egl_guid = str(uuid4()).replace('-', '').upper()
             prereq = self._install_game(installed_game)
             self.egl_export(installed_game.app_name)
             return prereq
         else:
-            return self._install_game(installed_game)
+            prereq = self._install_game(installed_game)
+            game = self.lgd.get_game_meta(installed_game.app_name)
+            manifest_data, _ = self.get_installed_manifest(installed_game.app_name)
+            self._write_egstore(game, installed_game, manifest_data)
+            return prereq
 
     def _install_game(self, installed_game: InstalledGame) -> dict:
         """Save game metadata and info to mark it "installed" and also show the user the prerequisites"""
@@ -1720,7 +1725,7 @@ class LegendaryCore:
         return dict()
 
     def uninstall_game(self, installed_game: InstalledGame, delete_files=True, delete_root_directory=False):
-        if installed_game.egl_guid:
+        if self.egl_sync_enabled:
             self.egl_uninstall(installed_game, delete_files=delete_files)
 
         if delete_files:
@@ -1779,6 +1784,7 @@ class LegendaryCore:
                     if mancpn['AppName'] == game.app_name:
                         self.log.info('Found EGL install metadata, verifying...')
                         mf = f.replace('.mancpn', '.manifest')
+                        egl_guid = f.replace('.mancpn', '')
                         break
             else:
                 mf = f'{egl_guid}.manifest'
@@ -1919,8 +1925,16 @@ class LegendaryCore:
         # convert to egl manifest
         egl_game = EGLManifest.from_lgd_game(lgd_game, lgd_igame)
 
+        self._write_egstore(lgd_game, lgd_igame, manifest_data)
+
+        # And finally, write the file for EGL
+        self.egl.set_manifest(egl_game)
+
+    @staticmethod
+    def _write_egstore(game: Game, igame: InstalledGame, manifest_data: bytes) -> None:
+        egl_game = EGLManifest.from_lgd_game(game, igame)
         # make sure .egstore folder exists
-        egstore_folder = os.path.join(lgd_igame.install_path, '.egstore')
+        egstore_folder = os.path.join(igame.install_path, '.egstore')
         if not os.path.exists(egstore_folder):
             os.makedirs(egstore_folder)
 
@@ -1928,14 +1942,11 @@ class LegendaryCore:
         with open(os.path.join(egstore_folder, f'{egl_game.installation_guid}.manifest', ), 'wb') as mf:
             mf.write(manifest_data)
 
-        mancpn = dict(FormatVersion=0, AppName=app_name,
-                      CatalogItemId=lgd_game.catalog_item_id,
-                      CatalogNamespace=lgd_game.namespace)
+        mancpn = dict(FormatVersion=0, AppName=game.app_name,
+                      CatalogItemId=game.catalog_item_id,
+                      CatalogNamespace=game.namespace)
         with open(os.path.join(egstore_folder, f'{egl_game.installation_guid}.mancpn', ), 'w') as mcpnf:
             json.dump(mancpn, mcpnf, indent=4, sort_keys=True)
-
-        # And finally, write the file for EGL
-        self.egl.set_manifest(egl_game)
 
     def egl_uninstall(self, igame: InstalledGame, delete_files=True):
         try:
@@ -1954,7 +1965,6 @@ class LegendaryCore:
         if not os.path.exists(os.path.join(igame.install_path,
                                            igame.executable.lstrip('/'))):
             self.log.warning('Synced game\'s files no longer exists, assuming it has been uninstalled.')
-            igame.egl_guid = ''
             return self.uninstall_game(igame, delete_files=False)
         else:
             self.log.info('Game files exist, assuming game is still installed, re-exporting to EGL...')
@@ -2002,8 +2012,6 @@ class LegendaryCore:
 
             # Check for games that have been uninstalled
             for lgd_igame in self._get_installed_list():
-                if not lgd_igame.egl_guid:  # skip non-exported
-                    continue
                 if lgd_igame.app_name in self.egl.manifests:
                     continue
 
