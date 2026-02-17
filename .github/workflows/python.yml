@@ -12,7 +12,6 @@ jobs:
     strategy:
       matrix:
         os: [
-          'ubuntu-24.04', 'ubuntu-24.04-arm',
           'windows-2025', 'windows-11-arm',
           'macos-15-intel', 'macos-15'
         ]
@@ -25,13 +24,13 @@ jobs:
       with:
         python-version: '3.13'
 
-    - name: Legendary dependencies and build tools
+    - name: Dependencies
+      run: pip3 install --requirement requirements.txt
+
+    - name: Build tools
       run: pip3 install --upgrade
         setuptools
         pyinstaller
-        requests
-        requests_futures
-        filelock
 
     - name: Optional dependencies (WebView)
       run: pip3 install --upgrade pywebview
@@ -57,3 +56,39 @@ jobs:
       with:
         name: ${{ runner.os }}-${{ runner.arch }}-package
         path: legendary/dist/*
+
+  zipapp:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [
+          'ubuntu-24.04', 'ubuntu-24.04-arm'
+        ]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - run: mkdir -p build dist
+
+    - name: Dependencies
+      run: pip3 install --requirement requirements.txt --target build
+
+    - run: cp -r legendary build
+
+    - name: Build
+      run: python -m zipapp
+        --output dist/legendary
+        --python "/usr/bin/env python"
+        --main legendary.cli:main
+        --compress
+        build
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ runner.os }}-${{ runner.arch }}-package
+        path: dist/*
