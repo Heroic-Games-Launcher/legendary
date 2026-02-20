@@ -83,7 +83,7 @@ jobs:
     - name: Build
       run: python -m zipapp
         --output dist/legendary
-        --python "/usr/bin/env python"
+        --python "/usr/bin/env python3"
         --main legendary.cli:main
         --compress
         build
