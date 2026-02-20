@@ -1,21 +1,29 @@
-# Legendary
-## A free and open-source Epic Games Launcher alternative
-![Logo](https://repository-images.githubusercontent.com/249938026/80b18f80-96c7-11ea-9183-0a8c96e7cada)
+<h1 align="center">Legendary</h1>
 
-[![Discord](https://discordapp.com/api/guilds/695233346627698689/widget.png?style=shield)](https://legendary.gl/discord) [![Twitter Follow](https://img.shields.io/twitter/follow/legendary_gl?label=Follow%20us%20for%20updates%21&style=social)](https://twitter.com/legendary_gl)
+<h3 align="center"><em>Heroic Games Edition</em></h3>
+
+<p align="center"><img src="assets/legendary_heroic-edition.png" width="152px" height="204px" alt="Logo" /></p>
+
+<p align="center">
+<a href="https://github.com/Heroic-Games-Launcher/legendary/releases/latest"><img src="https://img.shields.io/github/v/release/Heroic-Games-Launcher/legendary?style=for-the-badge" alt="GitHub release"></a>
+<a href="https://github.com/Heroic-Games-Launcher/legendary/releases"><img src="https://img.shields.io/github/downloads/Heroic-Games-Launcher/legendary/total?style=for-the-badge&amp;color=00B000" alt="GitHub all releases" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/github/license/Heroic-Games-Launcher/legendary?style=for-the-badge&amp;color=blue" alt="GPLv3 license" /></a>
+<br />
+<a href="https://discord.gg/rHJ2uqdquK"><img src="https://img.shields.io/discord/812703221789097985?label=Discord%20Server&amp;logo=discord&amp;color=5865F2&amp;style=for-the-badge" alt="Discord" /></a>
+<a href="https://patreon.com/heroicgameslauncher"><img src="https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fshieldsio-patreon.vercel.app%2Fapi%3Fusername%3Dheroicgameslauncher%26type%3Dpatrons&amp;style=for-the-badge" alt="Patreon" /></a>
+<a href="https://www.paypal.me/heroiclauncher"><img src="https://img.shields.io/badge/PayPal-Donate-blue?style=for-the-badge&amp;logo=paypal" alt="PayPal" /></a>
+<a href="https://ko-fi.com/heroicgames"><img src="https://img.shields.io/badge/Ko--Fi-Donate-orange?style=for-the-badge&amp;logo=ko-fi" alt="Ko-fi" /></a>
+</p>
 
 Legendary is an open-source game launcher that can download and install games from the Epic Games platform on Linux, macOS, and Windows.
 Its name as a tongue-in-cheek play on tiers of [item rarity in many MMORPGs](https://wow.gamepedia.com/Quality).
 
 Please read the the [config file](#config-file) and [cli usage](#usage) sections before creating an issue to avoid invalid reports.
 
-If you run into any issues [ask for help on our Discord](https://legendary.gl/discord) or [create an issue on GitHub](https://github.com/derrod/legendary/issues/new/choose) so we can fix it!
+If you run into any issues [ask for help on our Discord](https://discord.gg/rHJ2uqdquK) or [create an issue on GitHub](https://github.com/Heroic-Games-Launcher/legendary/issues/new/choose) so we can fix it!
 
-Finally, if you wish to support the project, please consider [buying me a coffee on Ko-Fi](https://ko-fi.com/derrod).
-Alternatively, if you've been considering picking up a copy of CrossOver you can use my [affiliate link](https://www.codeweavers.com/?ad=892) and discount code `LEGENDARY15` in their store.
-
-**Note:** Legendary is currently a CLI (command-line interface) application without a graphical user interface,
-it has to be run from a terminal (e.g. PowerShell)
+> _Legendary is a CLI (command-line interface) application without a graphical user interface, it has to be run from a terminal (e.g. PowerShell)._
+> _If you would like to have GUI (graphical user interface), please use [Heroic Games Launcher](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher)._
 
 **Features:**
  - Authenticating with Epic's service
@@ -34,34 +42,19 @@ it has to be run from a terminal (e.g. PowerShell)
 
 - Linux, Windows (8.1+), or macOS (12.0+)
   + 32-bit operating systems are not supported
-- python 3.9+ (64-bit)
-  + (Windows) `pythonnet` is not yet compatible with 3.10+, use 3.9 if you plan to install `pywebview` 
+- Python 3.9+ (64-bit)
 - PyPI packages:
   + `requests`
   + (optional) `pywebview` for webview-based login
   + (optional) `setuptools` and `wheel` for setup/building
 
-**Note:** Running Windows applications on Linux or macOS requires [Wine](https://www.winehq.org/).
+> _Running Windows applications on Linux or macOS requires [Wine](https://www.winehq.org/)._
 
 ## How to run/install
 
-### Package Manager (Linux)
-
-Several distros already have packages available, check out the [Available Linux Packages](https://github.com/derrod/legendary/wiki/Available-Linux-Packages) wiki page for details.
-
-Currently this includes
-[Arch](https://github.com/derrod/legendary/wiki/Available-Linux-Packages#arch-aur),
-[Fedora](https://github.com/derrod/legendary/wiki/Available-Linux-Packages#fedora),
-[openSUSE](https://github.com/derrod/legendary/wiki/Available-Linux-Packages#opensuse), and
-[Gentoo](https://github.com/derrod/legendary/wiki/Available-Linux-Packages#gentoo)
-but more will be available in the future.
-
-Note that since packages are maintained by third parties it may take a bit for them to be updated to the latest version.
-If you always want to have the latest features and fixes available then using the PyPI distribution is recommended.
-
 ### Prebuilt Standalone Binary (Windows, macOS, and Linux)
 
-Download the `legendary` or `legendary.exe` binary from [the latest release](https://github.com/derrod/legendary/releases/latest)
+Download the `legendary` or `legendary.exe` binary from the latest [release](https://github.com/Heroic-Games-Launcher/legendary/releases)
 and move it to somewhere in your `$PATH`/`%PATH%`. Don't forget to `chmod +x` it on Linux/macOS.
 
 The Windows .exe and Linux/macOS executable were created with PyInstaller and will run standalone even without python being installed.
@@ -73,124 +66,118 @@ Note that on Linux glibc >= 2.25 is required, so older distributions such as Ubu
 
 To prevent problems with permissions during installation, please upgrade your `pip` by running `python -m pip install -U pip --user`. 
 
-> **Tip:** You may need to replace `python` in the above command with `python3` on Linux/macOS, or `py -3` on Windows.
+> _You may need to replace `python` in the above command with `python3` on Linux/macOS, or `py -3` on Windows._
 
-#### Installation from PyPI (recommended)
+#### Manual installation from the repo
 
-Legendary is available on [PyPI](https://pypi.org/project/legendary-gl/), to install simply run:
-
-```bash
-pip install legendary-gl
-```
-
-Optionally if logging in via an embedded web view is desired also run
-```bash
-pip install legendary-gl[webview]
-```
-On Linux this may also require installing a supported web engine and its python bindings.  
-Ubunutu example:
-```bash
-sudo apt install python3-gi-cairo
-pip install legendary-gl[webview]
-```
-
-Alternatively `pip install legendary-gl[webview_gtk]` or `pip install pywebview[gtk]` will work
-but may require manually installing dependencies needed to build `PyGObject`.
-
-**Note:** Using pywebview's Qt engine may not work correctly. Using pywebview is currently unsupported on macOS.
-
-#### Manually from the repo
-
-- Install python3.9, setuptools, wheel, and requests
+- Install python, setuptools, wheel, and requests
 - Clone the git repository and cd into it
 - Run `pip install .`
 
-#### Ubuntu 20.04 example
+#### Ubuntu example
 
-Ubuntu 20.04's standard repositories include everything needed to install legendary:
-````bash
+Ubuntu's standard repositories include everything needed to install Legendary:
+
+```sh
 sudo apt install python3 python3-requests python3-setuptools-git
-git clone https://github.com/derrod/legendary.git
+git clone https://github.com/Heroic-Games-Launcher/legendary
 cd legendary
 pip install .
-````
+```
 
 If the `legendary` executable is not available after installation, you may need to configure your `PATH` correctly. You can do this by running the command: 
 
-```bash
+```sh
 echo 'export PATH=$PATH:~/.local/bin' >> ~/.profile && source ~/.profile
 ```
 
-### Directly from the repo (for dev/testing)
-
-- Install python3.9 and requests (optionally in a venv)
-- cd into the repository
+- Install Python
+- Install the `requests` PyPI package (optionally in a venv)
+- `cd` into the repository directory
 - Run `pip install -e .`
 
 This installs `legendary` in "editable" mode - any changes to the source code will take effect next time the `legendary` executable runs.
 
 ## Quickstart
 
-**Tip:** When using PowerShell with the standalone executable, you may need to replace `legendary` with `.\legendary` in the commands below.
+> _When using PowerShell with the standalone executable, you may need to replace `legendary` with `.\legendary` in the commands below._
 
-To log in:
-````
+### Logging in
+
+```sh
 legendary auth
-````
-When using the prebuilt Windows executables of version 0.20.14 or higher this should open a new window with the Epic Login.
+```
+
+When using the prebuilt Windows executables, this should open a new window with the Epic Login.
 
 Otherwise, authentication is a little finicky since we have to go through the Epic website and manually copy a code.
 The login page should open in your browser and after logging in you should be presented with a JSON response that contains a code ("authorizationCode"), just copy the code into the terminal and hit enter.
 
 Alternatively you can use the `--import` flag to import the authentication from the Epic Games Launcher (manually specifying the used WINE prefix may be required on Linux).
-Note that this will log you out of the Epic Launcher.
 
-Listing your games
-````
+> _This will log you out of the Epic Games Launcher._
+
+### Listing your games
+
+```sh
 legendary list
-````
-This will fetch a list of games available on your account, the first time may take a while depending on how many games you have.
+```
 
-Installing a game
-````
+This will fetch a list of games available on your account; the first time may take a while depending on how many games you have.
+
+### Installing a game
+
+```sh
 legendary install Anemone
-````
-**Note:** the name used here is generally the game's "app name" as seen in the games list rather than its title, but as of 0.20.12 legendary will try to match game names or abbreviations thereof as well. In this case `legendary install world of goo` or `legendary install wog` would also work!
+```
 
-List installed games and check for updates
-````
+The name used here is generally the game's "app name" (as seen in the games list) rather than its title, but Legendary will try to match game names or abbreviations thereof as well.
+In this case, `legendary install "world of goo"` or `legendary install wog` would also work!
+
+### List installed games and check for updates
+
+```sh
 legendary list-installed --check-updates
-````
+```
 
-Launch (run) a game with online authentication
-````
+### Launch a game with online authentication
+
+```sh
 legendary launch "world of goo"
-````
-**Tip:** most games will run fine offline (`--offline`), and thus won't require launching through legendary for online authentication.
+```
+
 You can run `legendary launch <App Name> --offline --dry-run` to get a command line that will launch the game with all parameters that would be used by the Epic Launcher.
 These can then be entered into any other game launcher (e.g. Lutris/Steam) if the game requires them.
 
-Importing a previously installed game
-````
+> _Most games will run fine offline (`--offline`), and thus won't require launching through Legendary for online authentication._
+
+### Importing a previously installed game
+
+```sh
 legendary import Anemone /mnt/games/Epic/WorldOfGoo
-````
-**Note:** Importing will require a full verification so Legendary can correctly update the game later.  
-**Note 2:** In order to use an alias here you may have to put it into quotes if if contains more than one word, e.g. `legendary import-game "world of goo" /mnt/games/Epic/WorldOfGoo`.
+```
 
-Sync savegames with the Epic Cloud
-````
+In order to use an alias here, you may have to put it into quotes if it contains more than one word, e.g. `legendary import-game "world of goo" /mnt/games/Epic/WorldOfGoo`.
+
+> _Importing will require a full verification so Legendary can correctly update the game later._
+
+### Sync savegames with the Epic Cloud
+
+```sh
 legendary sync-saves
-````
-**Note:** When this command is run the first time after a supported game has been installed it will ask you to confirm or provide the path to where the savegame is located.
+```
 
-Automatically sync all games with the Epic Games Launcher
-````
+When this command is run the first time after a supported game has been installed, it will ask you to confirm or provide the path to where the savegame is located.
+
+### Sync all games with the Epic Games Launcher
+
+```sh
 legendary -y egl-sync
-````
+```
 
 ## Usage
 
-````
+```text
 usage: legendary [-h] [-H] [-v] [-y] [-V] [-J] [-A <seconds>] <command> ...
 
 Legendary v0.X.X - "Codename"
@@ -659,13 +646,14 @@ positional arguments:
 
 optional arguments:
   -h, --help  show this help message and exit
-````
+```
 
 
 ## Config file
 
-Legendary supports some options as well as game specific configuration in `~/.config/legendary/config.ini`:
-````ini
+Legendary supports some options as well as game specific configuration in `~/.config/legendary/config.ini`/`%USERPROFILE%\.config\legendary\config.ini`:
+
+```ini
 [Legendary]
 log_level = debug
 ; maximum shared memory (in MiB) to use for installation
@@ -761,4 +749,4 @@ pre_launch_wait = false
 ; (macOS) override crossover settings
 crossover_app = /Applications/CrossOver Nightly.app
 crossover_bottle = SomethingElse
-````
+```
