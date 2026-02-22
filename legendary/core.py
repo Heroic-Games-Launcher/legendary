@@ -1098,7 +1098,7 @@ class LegendaryCore:
             self.log.info(f'Downloading {len(chunkLinks)} chunks...')
 
             def log_download(r, *args, **kwargs):
-                self.log.debug(f'Downloaded chunk {'/'.join(urlparse(r.url).path.split('/')[5:])} successfully.')
+                self.log.debug(f'Downloaded chunk {"/".join(urlparse(r.url).path.split("/")[5:])} successfully.')
 
             # map chunkLinks to self.egs.unauth_future_session.get
             futures = [self.egs.unauth_future_session.get(link, hooks={'response': log_download}) for link in chunkLinks]
