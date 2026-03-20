@@ -2619,6 +2619,9 @@ class LegendaryCLI:
         version = game.app_version(args.platform)
         manifest_data = self.core.lgd.load_manifest(game.app_name, version, args.platform)
         if not manifest_data:
+            if not self.core.login():
+                logger.error('Login failed, cannot continue!')
+                exit(1)
             manifest_data, _ = self.core.get_cdn_manifest(game, platform=args.platform)
             self.core.lgd.save_manifest(game.app_name, manifest_data, version, args.platform)
 
