@@ -93,14 +93,7 @@ class Game:
     def third_party_store(self) -> Optional[str]:
         if not self.metadata:
             return None
-
-        custom_attributes: dict[str, dict] = self.metadata.get('customAttributes', {})
-        for key in ['ThirdPartyManagedApp', 'ThirdPartyManagedProvider']:
-            if key not in custom_attributes:
-                continue
-            return custom_attributes.get(key).get('value')
-
-        return None
+        return self.metadata.get('customAttributes', {}).get('ThirdPartyManagedApp', {}).get('value', None)
 
     @property
     def partner_link_type(self):
