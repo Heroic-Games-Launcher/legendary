@@ -1,3 +1,4 @@
 requests<3.0
 requests_futures
 filelock
+pycryptodomex
