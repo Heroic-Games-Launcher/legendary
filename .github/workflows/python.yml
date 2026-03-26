@@ -79,12 +79,12 @@ jobs:
       run: pip3 install --requirement requirements.txt --target build
 
     - run: cp -r legendary build
+    - run: cp zipapp_main.py build/__main__.py
 
     - name: Build
       run: python -m zipapp
         --output dist/legendary
         --python "/usr/bin/env python3"
-        --main legendary.cli:main
         --compress
         build
 
