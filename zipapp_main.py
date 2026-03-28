@@ -31,7 +31,6 @@ if zipfile.is_zipfile(os.path.dirname(__file__)):
             if should_extract:
                 for file in zf.infolist():
                     if file.filename.startswith('Cryptodome'):
-                        print('Extracting', file.filename)
                         extracted = zf.extract(file.filename, vendored_packages_path)
                         os.chmod(extracted, file.external_attr >> 16)
     sys.path.insert(0, vendored_packages_path)
