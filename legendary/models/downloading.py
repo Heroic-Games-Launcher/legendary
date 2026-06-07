@@ -29,6 +29,7 @@ class DownloaderTask:
     url: str
     chunk_guid: int
     shm: SharedMemorySegment
+    compressed_size: int = 0  # compressed chunk size from manifest (enables range splitting)
 
 
 @dataclass
@@ -36,7 +37,7 @@ class DownloaderTaskResult(DownloaderTask):
     """
     Result of DownloaderTask provided by download workers
     """
-    success: bool
+    success: bool = False
     size_downloaded: Optional[int] = None
     size_decompressed: Optional[int] = None
 

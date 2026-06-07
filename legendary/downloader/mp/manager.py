@@ -574,8 +574,9 @@ class DLManager(Process):
                 self.log.debug(f'Adding {chunk.guid_num} (active: {self.active_tasks})')
                 try:
                     self.dl_worker_queue.put(DownloaderTask(url=url or (self.base_url + '/' + chunk.path),
-                                                            chunk_guid=chunk.guid_num, shm=sms),
-                                             timeout=1.0)
+                                                            chunk_guid=chunk.guid_num, shm=sms,
+                                                            compressed_size=chunk.file_size),
+                                                         timeout=1.0)
                 except Exception as e:
                     self.log.warning(f'Failed to add to download queue: {e!r}')
                     self.signed_chunks_q.put((chunk, url))

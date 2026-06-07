@@ -41,6 +41,7 @@ from logging.handlers import QueueHandler
 from multiprocessing import Process
 from multiprocessing.shared_memory import SharedMemory
 from queue import Empty
+from threading import Thread
 
 import requests
 from requests.adapters import HTTPAdapter, DEFAULT_POOLBLOCK
@@ -89,6 +90,43 @@ class DLWorker(Process):
             self.session.mount('https://', adapter)
             self.session.mount('http://', adapter)
 
+        # Per-worker flag: set to False the first time a range request fails,
+        # disabling splits for the rest of this worker's lifetime.
+        self._ranges_ok = True
+
+    def _ranged_download(self, url: str, total: int):
+        """
+        Download *url* as two parallel half-range requests.
+        Returns the assembled bytes, or None if ranges are unsupported or failed.
+        Each half uses its own TCP connection → bypasses per-connection CDN throttling.
+        """
+        mid = total // 2
+        parts = [None, None]
+        ok = [True, True]
+
+        def fetch(idx, start, end):
+            try:
+                r = self.session.get(url, timeout=self.dl_timeout,
+                                     headers={'Range': f'bytes={start}-{end}'})
+                if r.status_code == 206:
+                    parts[idx] = r.content
+                else:
+                    ok[idx] = False
+            except Exception:
+                ok[idx] = False
+
+        t0 = Thread(target=fetch, args=(0, 0, mid - 1), daemon=True)
+        t1 = Thread(target=fetch, args=(1, mid, total - 1), daemon=True)
+        t0.start()
+        t1.start()
+        t0.join(timeout=self.dl_timeout + 5)
+        t1.join(timeout=self.dl_timeout + 5)
+
+        if not all(ok) or None in parts:
+            self._ranges_ok = False
+            return None
+        return parts[0] + parts[1]
+
     def run(self):
         # we have to fix up the logger before we can start
         _root = logging.getLogger()
@@ -128,14 +166,21 @@ class DLWorker(Process):
                     logger.debug(f'Downloading {job.url}')
 
                     try:
-                        r = self.session.get(job.url, timeout=self.dl_timeout)
-                        r.raise_for_status()
+                        raw = None
+                        # Split into 2 parallel range requests when CDN supports it
+                        # and chunk is large enough to benefit (≥ 256 KiB compressed).
+                        if self._ranges_ok and job.compressed_size >= 256 * 1024:
+                            raw = self._ranged_download(job.url, job.compressed_size)
+                        if raw is None:
+                            r = self.session.get(job.url, timeout=self.dl_timeout)
+                            r.raise_for_status()
+                            raw = r.content
                     except Exception as e:
                         logger.warning(f'Chunk download for {job.chunk_guid} failed: ({e!r}), retrying...')
                         continue
 
-                    compressed = len(r.content)
-                    chunk = Chunk.read_buffer(r.content, self.secrets)
+                    compressed = len(raw)
+                    chunk = Chunk.read_buffer(raw, self.secrets)
                     break
                 else:
                     raise TimeoutError('Max retries reached')
