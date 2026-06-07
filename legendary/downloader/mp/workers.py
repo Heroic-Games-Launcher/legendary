@@ -37,6 +37,7 @@ def _fallocate_ok(path: str) -> bool:
     return _fs_type_cache[mount_dir] in _FALLOCATE_SUPPORTED_FS
 
 
+from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import QueueHandler
 from multiprocessing import Process
 from multiprocessing.shared_memory import SharedMemory
@@ -242,8 +243,12 @@ class FileWorker(Process):
 
         last_filename = ''
         current_file = None
+        current_file_fd = -1  # raw fd for fadvise, kept until async close finishes
         # Cache directories we've already created to avoid a stat() per task.
         _dirs_created: set = set()
+        # Thread pool for async file closes so btrfs CoW metadata updates don't
+        # stall the write pipeline.  max_workers=2 handles a CLOSE/RENAME overlap.
+        _close_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='fw-close')
 
         while True:
             try:
@@ -256,6 +261,8 @@ class FileWorker(Process):
                 if isinstance(j, TerminateWorkerTask):
                     if current_file:
                         current_file.close()
+                    # Wait for any in-flight async closes to finish before exiting
+                    _close_pool.shutdown(wait=True)
                     logger.debug('Worker received termination signal, shutting down...')
                     # send termination task to results halnder as well
                     self.o_q.put(TerminateWorkerTask())
@@ -281,16 +288,17 @@ class FileWorker(Process):
                         current_file.close()
 
                     current_file = open(full_path, 'wb', buffering=1024 * 1024)
+                    current_file_fd = current_file.fileno()
                     last_filename = j.filename
 
                     if sys.platform == 'linux':
                         if j.file_size > 0 and _fallocate_ok(full_path):
                             try:
-                                os.posix_fallocate(current_file.fileno(), 0, j.file_size)
+                                os.posix_fallocate(current_file_fd, 0, j.file_size)
                             except OSError as e:
                                 logger.debug(f'fallocate failed (not critical): {e}')
                         try:
-                            os.posix_fadvise(current_file.fileno(), 0, 0, os.POSIX_FADV_NOREUSE)
+                            os.posix_fadvise(current_file_fd, 0, 0, os.POSIX_FADV_NOREUSE)
                         except OSError:
                             pass
 
@@ -298,8 +306,20 @@ class FileWorker(Process):
                     continue
                 elif j.flags & TaskFlags.CLOSE_FILE:
                     if current_file:
-                        current_file.close()
+                        # Release page cache for the completed file before closing so
+                        # the kernel doesn't keep written pages under memory pressure.
+                        if sys.platform == 'linux' and current_file_fd >= 0:
+                            try:
+                                os.posix_fadvise(current_file_fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                            except OSError:
+                                pass
+                        # Submit close to the background pool so btrfs CoW metadata
+                        # updates don't stall the write pipeline.  The file data is
+                        # already in the page cache; close() only flushes the userspace
+                        # buffer (fast) + triggers inode CoW (slow on btrfs).
+                        _close_pool.submit(current_file.close)
                         current_file = None
+                        current_file_fd = -1
                     else:
                         logger.warning(f'Asking to close file that is not open: {j.filename}')
 
