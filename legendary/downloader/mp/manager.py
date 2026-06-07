@@ -131,16 +131,17 @@ class DLManager(Process):
                 mismatch = 0
                 completed_files = set()
 
-                for line in open(self.resume_file, encoding='utf-8').readlines():
-                    file_hash, _, filename = line.strip().partition(':')
-                    _p = os.path.join(self.dl_dir, filename)
-                    if not os.path.exists(_p):
-                        self.log.debug(f'File does not exist but is in resume file: "{_p}"')
-                        missing += 1
-                    elif file_hash != manifest.file_manifest_list.get_file_by_path(filename).sha_hash.hex():
-                        mismatch += 1
-                    else:
-                        completed_files.add(filename)
+                with open(self.resume_file, encoding='utf-8') as resume_f:
+                    for line in resume_f:
+                        file_hash, _, filename = line.strip().partition(':')
+                        _p = os.path.join(self.dl_dir, filename)
+                        if not os.path.exists(_p):
+                            self.log.debug(f'File does not exist but is in resume file: "{_p}"')
+                            missing += 1
+                        elif file_hash != manifest.file_manifest_list.get_file_by_path(filename).sha_hash.hex():
+                            mismatch += 1
+                        else:
+                            completed_files.add(filename)
 
                 if missing:
                     self.log.warning(f'{missing} previously completed file(s) are missing, they will be redownloaded.')
@@ -279,7 +280,7 @@ class DLManager(Process):
             # ignore files with less than N chunk parts, this speeds things up dramatically
             cp_threshold = 5
 
-            remaining_files = {fm.filename: {cp.guid_num for cp in fm.chunk_parts}
+            remaining_files = {fm.filename: (fm, {cp.guid_num for cp in fm.chunk_parts})
                                for fm in fmlist if fm.filename not in mc.unchanged}
             _fmlist = []
 
@@ -289,12 +290,12 @@ class DLManager(Process):
                     continue
 
                 _fmlist.append(fm)
-                f_chunks = remaining_files.pop(fm.filename)
+                _, f_chunks = remaining_files.pop(fm.filename)
                 if len(f_chunks) < cp_threshold:
                     continue
 
                 best_overlap, match = 0, None
-                for fname, chunks in remaining_files.items():
+                for fname, (_, chunks) in remaining_files.items():
                     if len(chunks) < cp_threshold:
                         continue
                     overlap = len(f_chunks & chunks)
@@ -302,8 +303,8 @@ class DLManager(Process):
                         best_overlap, match = overlap, fname
 
                 if match:
-                    _fmlist.append(manifest.file_manifest_list.get_file_by_path(match))
-                    remaining_files.pop(match)
+                    matched_fm, _ = remaining_files.pop(match)
+                    _fmlist.append(matched_fm)
 
             fmlist = _fmlist
             opt_delta = time.time() - s_time
@@ -421,14 +422,16 @@ class DLManager(Process):
             if reused:
                 self.log.debug(f' + Reusing {reused} chunks from: {current_file.filename}')
                 # open temporary file that will contain download + old file contents
-                self.tasks.append(FileTask(current_file.filename + u'.tmp', flags=TaskFlags.OPEN_FILE))
+                self.tasks.append(FileTask(current_file.filename + u'.tmp', flags=TaskFlags.OPEN_FILE,
+                                           file_size=current_file.file_size))
                 self.tasks.extend(chunk_tasks)
                 self.tasks.append(FileTask(current_file.filename + u'.tmp', flags=TaskFlags.CLOSE_FILE))
                 # delete old file and rename temporary
                 self.tasks.append(FileTask(current_file.filename, old_file=current_file.filename + u'.tmp',
                                            flags=TaskFlags.RENAME_FILE | TaskFlags.DELETE_FILE))
             else:
-                self.tasks.append(FileTask(current_file.filename, flags=TaskFlags.OPEN_FILE))
+                self.tasks.append(FileTask(current_file.filename, flags=TaskFlags.OPEN_FILE,
+                                           file_size=current_file.file_size))
                 self.tasks.extend(chunk_tasks)
                 self.tasks.append(FileTask(current_file.filename, flags=TaskFlags.CLOSE_FILE))
 
@@ -459,11 +462,11 @@ class DLManager(Process):
             raise MemoryError(f'Current shared memory cache is smaller than required: {shared_mib} < {required_mib}. '
                               + message)
 
-        # calculate actual dl and patch write size.
-        analysis_res.dl_size = \
-            sum(c.file_size for c in manifest.chunk_data_list.elements if c.guid_num in chunks_in_dl_list)
-        analysis_res.uncompressed_dl_size = \
-            sum(c.window_size for c in manifest.chunk_data_list.elements if c.guid_num in chunks_in_dl_list)
+        # calculate actual dl and patch write size in a single pass
+        for c in manifest.chunk_data_list.elements:
+            if c.guid_num in chunks_in_dl_list:
+                analysis_res.dl_size += c.file_size
+                analysis_res.uncompressed_dl_size += c.window_size
 
         # add jobs to remove files
         for fname in mc.removed:
@@ -490,7 +493,7 @@ class DLManager(Process):
         ticket = self._gen_ticket()
         while self.chunks_to_dl and self.running:
             if not self.signed_chunks_q.empty():
-                sleep(1)
+                sleep(0.05)
                 continue
 
             self.log.debug('Fetching more chunk URLs...')

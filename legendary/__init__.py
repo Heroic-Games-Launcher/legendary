@@ -1,4 +1,4 @@
 """Legendary!"""
 
 __version__ = '0.20.43'
-__codename__ = 'Riding Shotgun (Heroic)'
+__codename__ = 'Riding Shotgun (Heroic-dev)'

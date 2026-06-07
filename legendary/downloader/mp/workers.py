@@ -1,8 +1,41 @@
 # coding: utf-8
 
 import os
+import sys
 import time
 import logging
+
+# Filesystems where posix_fallocate works natively (no fallback to zeroing).
+# btrfs and zfs lack kernel-level fallocate support and fall back to writing
+# zeros for every file, doubling I/O — so they are intentionally excluded.
+_FALLOCATE_SUPPORTED_FS = frozenset({'ext4', 'ext3', 'ext2', 'xfs', 'f2fs', 'tmpfs'})
+_fs_type_cache: dict = {}
+
+
+def _fs_type_for_path(path: str) -> str:
+    """Return the filesystem type (e.g. 'ext4', 'btrfs') for *path* via /proc/mounts."""
+    try:
+        real = os.path.realpath(path)
+        best_mount, best_type = '', ''
+        with open('/proc/mounts') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3:
+                    mp, fst = parts[1], parts[2]
+                    if real.startswith(mp) and len(mp) > len(best_mount):
+                        best_mount, best_type = mp, fst
+        return best_type
+    except Exception:
+        return ''
+
+
+def _fallocate_ok(path: str) -> bool:
+    """Return True if posix_fallocate is safe to use on the filesystem hosting *path*."""
+    mount_dir = os.path.dirname(path)
+    if mount_dir not in _fs_type_cache:
+        _fs_type_cache[mount_dir] = _fs_type_for_path(mount_dir)
+    return _fs_type_cache[mount_dir] in _FALLOCATE_SUPPORTED_FS
+
 
 from logging.handlers import QueueHandler
 from multiprocessing import Process
@@ -81,19 +114,17 @@ class DLWorker(Process):
                 logger.debug('Worker received termination signal, shutting down...')
                 break
 
-            tries = 0
             compressed = 0
             chunk = None
 
             try:
-                while tries < self.max_retries:
+                for tries in range(self.max_retries):
                     # retry once immediately, otherwise do exponential backoff
                     if tries > 1:
                         sleep_time = 2**(tries-1)
                         logger.info(f'Sleeping {sleep_time} seconds before retrying.')
                         time.sleep(sleep_time)
 
-                    # print('Downloading', job.url)
                     logger.debug(f'Downloading {job.url}')
 
                     try:
@@ -103,13 +134,9 @@ class DLWorker(Process):
                         logger.warning(f'Chunk download for {job.chunk_guid} failed: ({e!r}), retrying...')
                         continue
 
-                    if r.status_code != 200:
-                        logger.warning(f'Chunk download for {job.chunk_guid} failed: status {r.status_code}, retrying...')
-                        continue
-                    else:
-                        compressed = len(r.content)
-                        chunk = Chunk.read_buffer(r.content, self.secrets)
-                        break
+                    compressed = len(r.content)
+                    chunk = Chunk.read_buffer(r.content, self.secrets)
+                    break
                 else:
                     raise TimeoutError('Max retries reached')
             except Exception as e:
@@ -203,8 +230,19 @@ class FileWorker(Process):
                         logger.warning(f'Opening new file {j.filename} without closing previous! {last_filename}')
                         current_file.close()
 
-                    current_file = open(full_path, 'wb')
+                    current_file = open(full_path, 'wb', buffering=1024 * 1024)
                     last_filename = j.filename
+
+                    if sys.platform == 'linux':
+                        if j.file_size > 0 and _fallocate_ok(full_path):
+                            try:
+                                os.posix_fallocate(current_file.fileno(), 0, j.file_size)
+                            except OSError as e:
+                                logger.debug(f'fallocate failed (not critical): {e}')
+                        try:
+                            os.posix_fadvise(current_file.fileno(), 0, 0, os.POSIX_FADV_NOREUSE)
+                        except OSError:
+                            pass
 
                     self.o_q.put(WriterTaskResult(success=True, **j.__dict__))
                     continue
@@ -273,7 +311,7 @@ class FileWorker(Process):
                     if j.shared_memory:
                         shm_offset = j.shared_memory.offset + j.chunk_offset
                         shm_end = shm_offset + j.chunk_size
-                        current_file.write(self.shm.buf[shm_offset:shm_end])
+                        current_file.write(memoryview(self.shm.buf)[shm_offset:shm_end])
                     elif j.cache_file:
                         with open(os.path.join(self.cache_path, j.cache_file), 'rb') as f:
                             if j.chunk_offset:
@@ -281,6 +319,11 @@ class FileWorker(Process):
                             current_file.write(f.read(j.chunk_size))
                     elif j.old_file:
                         with open(os.path.join(self.base_path, j.old_file), 'rb') as f:
+                            if sys.platform == 'linux':
+                                try:
+                                    os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
+                                except OSError:
+                                    pass
                             if j.chunk_offset:
                                 f.seek(j.chunk_offset)
                             current_file.write(f.read(j.chunk_size))

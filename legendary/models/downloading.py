@@ -76,6 +76,7 @@ class FileTask:
     flags: TaskFlags
     # If rename is true, this is the name of the file to be renamed
     old_file: Optional[str] = None
+    file_size: int = 0
 
 
 @dataclass
@@ -96,6 +97,7 @@ class WriterTask:
     # File to read old chunk from, disk chunk cache or old game file
     old_file: Optional[str] = None
     cache_file: Optional[str] = None
+    file_size: int = 0
 
 
 @dataclass

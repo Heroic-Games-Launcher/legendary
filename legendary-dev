@@ -1,0 +1,3 @@
+#!/bin/bash
+exec /home/paraguayo33/legendary/.venv/bin/python \
+  /home/paraguayo33/legendary/legendary/cli.py "$@"
