@@ -519,10 +519,11 @@ class DLManager(Process):
 
             signed_urls: dict[str, str] = self.sign_pipe.recv()
             for chunk in unprocessed_chunks:
-                signed_url = signed_urls[chunk.path]
-                self.signed_chunks_q.put((chunk, signed_url))
-                with sig_chunks_cond:
-                    sig_chunks_cond.notify()
+                self.signed_chunks_q.put((chunk, signed_urls[chunk.path]))
+            # One notification per batch is enough — download_job_manager wakes
+            # once and then drains whatever is in the queue without re-waiting.
+            with sig_chunks_cond:
+                sig_chunks_cond.notify()
 
     def _gen_ticket(self) -> DownloadTicket:
         # TODO: Verify this works on all games
@@ -562,7 +563,7 @@ class DLManager(Process):
                     break
 
                 try:
-                    chunk, url = self.signed_chunks_q.get(False, 3.0)
+                    chunk, url = self.signed_chunks_q.get(block=False)
                 except Empty:
                     no_signed_chunks = True
                     break
@@ -598,7 +599,7 @@ class DLManager(Process):
 
             if no_signed_chunks:
                 with sig_chunks_cond:
-                    self.log.debug('Waiting for more signed cunks...')
+                    self.log.debug('Waiting for more signed chunks...')
                     sig_chunks_cond.wait(timeout=1.0)
 
         self.log.debug('Download Job Manager quitting...')
