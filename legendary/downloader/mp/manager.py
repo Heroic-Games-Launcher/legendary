@@ -47,6 +47,7 @@ class DLManager(Process):
         self.logging_queue = None
         self.dl_worker_queue = None
         self.writer_queue = None
+        self.writer_queue_2 = None  # second parallel file writer
         self.dl_result_q = None
         self.writer_result_q = None
         self.signed_chunks_q: Optional[MPQueue[tuple[ChunkInfo | TerminateWorkerTask, Optional[str]]]] = None
@@ -601,18 +602,28 @@ class DLManager(Process):
 
         self.log.debug('Download Job Manager quitting...')
 
-    def dl_results_handler(self, task_cond: Condition):
+    def dl_results_handler(self, task_cond: Condition, num_file_workers: int = 1):
         in_buffer = dict()
 
         task = self.tasks.popleft()
         current_file = ''
 
+        # When num_file_workers == 2, alternate between the two writer queues on each
+        # OPEN_FILE so two files are written in parallel.  All tasks for the same file
+        # (OPEN → chunks → CLOSE → RENAME/CHMOD) always stay on the same queue.
+        _writer_qs = [self.writer_queue, self.writer_queue_2]
+        _q_idx = 0
+        _wq = self.writer_queue  # single-worker default
+
         while task and self.running:
             if isinstance(task, FileTask):  # this wasn't necessarily a good idea...
                 try:
-                    self.writer_queue.put(WriterTask(**task.__dict__), timeout=1.0)
                     if task.flags & TaskFlags.OPEN_FILE:
+                        if num_file_workers > 1:
+                            _wq = _writer_qs[_q_idx % 2]
+                            _q_idx += 1
                         current_file = task.filename
+                    _wq.put(WriterTask(**task.__dict__), timeout=1.0)
                 except Exception as e:
                     self.tasks.appendleft(task)
                     self.log.warning(f'Adding to queue failed: {e!r}')
@@ -631,7 +642,7 @@ class DLManager(Process):
 
                 try:
                     self.log.debug(f'Adding {task.chunk_guid} to writer queue')
-                    self.writer_queue.put(WriterTask(
+                    _wq.put(WriterTask(
                         filename=current_file, shared_memory=res_shm,
                         chunk_offset=task.chunk_offset, chunk_size=task.chunk_size,
                         chunk_guid=task.chunk_guid, old_file=task.chunk_file,
@@ -680,7 +691,7 @@ class DLManager(Process):
 
         self.log.debug('Download result handler quitting...')
 
-    def fw_results_handler(self, shm_cond: Condition):
+    def fw_results_handler(self, shm_cond: Condition, num_file_workers: int = 1):
         # Buffer resume-file lines and flush in batches to avoid opening the
         # file on every completed file (10 000+ times for large games).
         _resume_buf: list = []
@@ -697,16 +708,20 @@ class DLManager(Process):
                 _resume_file_handle.flush()
                 _resume_buf.clear()
 
+        _terminated = 0
         while self.running:
             try:
                 res = self.writer_result_q.get(timeout=1.0)
 
                 if isinstance(res, TerminateWorkerTask):
-                    self.log.debug('Got termination command in FW result handler')
-                    _flush_resume()
-                    if _resume_file_handle:
-                        _resume_file_handle.close()
-                    break
+                    _terminated += 1
+                    self.log.debug(f'FW result handler: worker terminated ({_terminated}/{num_file_workers})')
+                    if _terminated >= num_file_workers:
+                        _flush_resume()
+                        if _resume_file_handle:
+                            _resume_file_handle.close()
+                        break
+                    continue
 
                 self.num_tasks_processed_since_last += 1
 
@@ -739,6 +754,13 @@ class DLManager(Process):
                 continue
             except Exception as e:
                 self.log.warning(f'Exception when trying to read writer result queue: {e!r}')
+        # Flush and close resume file on any exit path (normal or self.running=False)
+        _flush_resume()
+        if _resume_file_handle:
+            try:
+                _resume_file_handle.close()
+            except OSError:
+                pass
         self.log.debug('Writer result handler quitting...')
 
     def run(self):
@@ -782,11 +804,14 @@ class DLManager(Process):
             queues: list[tuple[str, Optional[MPQueue]]] = [
                 ('Download jobs', self.dl_worker_queue),
                 ('Writer jobs', self.writer_queue),
+                ('Writer jobs 2', self.writer_queue_2),
                 ('Download results', self.dl_result_q),
                 ('Writer results', self.writer_result_q),
                 ('Signed chunks', self.signed_chunks_q)
             ]
             for name, q in queues:
+                if q is None:
+                    continue
                 self.log.debug(f'Cleaning up queue "{name}"')
                 try:
                     while True:
@@ -832,6 +857,55 @@ class DLManager(Process):
         except Exception:
             return 1.0
 
+    @staticmethod
+    def _parallel_writers_for_path(path: str) -> int:
+        """
+        Return the optimal number of parallel FileWorkers for *path*.
+        Returns 2 on SSD/NVMe with a filesystem that handles concurrent writes well,
+        1 on HDD (parallel writes cause seek thrashing) or unknown storage.
+        """
+        _parallel_fs = frozenset({'ext4', 'ext3', 'ext2', 'xfs', 'f2fs', 'btrfs', 'tmpfs'})
+
+        try:
+            from legendary.downloader.mp.workers import _fs_type_for_path
+            fs = _fs_type_for_path(path)
+        except Exception:
+            fs = ''
+
+        if fs not in _parallel_fs:
+            return 1
+
+        # Resolve which block device hosts this path
+        try:
+            real = os.path.realpath(path)
+            best_mp, device = '', ''
+            with open('/proc/mounts') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2 and real.startswith(parts[1]) and len(parts[1]) > len(best_mp):
+                        best_mp, device = parts[1], parts[0]
+
+            if not device.startswith('/dev/'):
+                return 1
+
+            dev_name = os.path.basename(os.path.realpath(device))
+
+            # Walk /sys/block to find the parent device (handles sda1→sda, nvme0n1p1→nvme0n1, etc.)
+            base = None
+            for bd in os.listdir('/sys/block/'):
+                if dev_name.startswith(bd) and (base is None or len(bd) > len(base)):
+                    base = bd
+
+            if not base:
+                return 1
+
+            with open(f'/sys/block/{base}/queue/rotational') as f:
+                is_ssd = f.read().strip() == '0'
+
+            return 2 if is_ssd else 1
+        except Exception:
+            return 1
+
     def run_real(self):
         # Cap shared memory against available system RAM before allocating.
         # Never use more than 40 % of what the OS reports as free, but always
@@ -863,6 +937,7 @@ class DLManager(Process):
         # Create queues
         self.dl_worker_queue = MPQueue(-1)
         self.writer_queue = MPQueue(-1)
+        self.writer_queue_2 = MPQueue(-1)
         self.dl_result_q = MPQueue(-1)
         self.writer_result_q = MPQueue(-1)
         self.signed_chunks_q = MPQueue(-1)
@@ -880,11 +955,22 @@ class DLManager(Process):
             self.children.append(w)
             w.start()
 
-        self.log.info('Starting file writing worker...')
+        num_fw = self._parallel_writers_for_path(self.dl_dir)
+        storage_label = 'SSD/NVMe' if num_fw > 1 else 'HDD or unknown'
+        self.log.info(f'Starting {num_fw} file writing worker(s) (storage detected: {storage_label})')
+
         writer_p = FileWorker(self.writer_queue, self.writer_result_q, self.dl_dir,
                               self.shared_memory.name, self.cache_dir, self.logging_queue)
         self.children.append(writer_p)
         writer_p.start()
+
+        if num_fw > 1:
+            writer_p2 = FileWorker(self.writer_queue_2, self.writer_result_q, self.dl_dir,
+                                   self.shared_memory.name, self.cache_dir, self.logging_queue)
+            self.children.append(writer_p2)
+            writer_p2.start()
+        else:
+            writer_p2 = None
 
         num_chunk_tasks = sum(isinstance(t, ChunkTask) for t in self.tasks)
         num_dl_tasks = len(self.chunks_to_dl)
@@ -909,8 +995,8 @@ class DLManager(Process):
         s_time = time.time()
         self.threads.append(Thread(target=self.chunk_signing_manager, args=(sig_chunks_cond,)))
         self.threads.append(Thread(target=self.download_job_manager, args=(task_cond, shm_cond, sig_chunks_cond)))
-        self.threads.append(Thread(target=self.dl_results_handler, args=(task_cond,)))
-        self.threads.append(Thread(target=self.fw_results_handler, args=(shm_cond,)))
+        self.threads.append(Thread(target=self.dl_results_handler, args=(task_cond, num_fw)))
+        self.threads.append(Thread(target=self.fw_results_handler, args=(shm_cond, num_fw)))
 
         for t in self.threads:
             t.start()
@@ -987,12 +1073,19 @@ class DLManager(Process):
 
         self.log.info('Waiting for installation to finish...')
         self.writer_queue.put_nowait(TerminateWorkerTask())
+        if num_fw > 1:
+            self.writer_queue_2.put_nowait(TerminateWorkerTask())
         self.signed_chunks_q.put_nowait((TerminateWorkerTask(), None))
 
         writer_p.join(timeout=10.0)
         if writer_p.exitcode is None:
-            self.log.warning(f'Terminating writer process, no exit code!')
+            self.log.warning('Terminating writer process 1, no exit code!')
             writer_p.terminate()
+        if writer_p2 is not None:
+            writer_p2.join(timeout=10.0)
+            if writer_p2.exitcode is None:
+                self.log.warning('Terminating writer process 2, no exit code!')
+                writer_p2.terminate()
 
         # forcibly kill DL workers that are not actually dead yet
         for child in self.children:
