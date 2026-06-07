@@ -908,21 +908,40 @@ class DLManager(Process):
             return 1
 
     def run_real(self):
-        # Cap shared memory against available system RAM before allocating.
-        # Never use more than 40 % of what the OS reports as free, but always
-        # keep at least enough for 2 chunks per worker so the pipeline can run.
         avail_ram = self._available_ram_bytes()
-        if avail_ram > 0:
-            ram_cap = int(avail_ram * 0.4)
-            min_shm = self.analysis.biggest_chunk * self.max_workers * 2
-            if self.max_shared_memory > ram_cap:
-                adjusted = max(ram_cap, min_shm)
-                self.log.info(
-                    f'Reducing shared memory {self.max_shared_memory // 1024 // 1024} MiB → '
-                    f'{adjusted // 1024 // 1024} MiB '
-                    f'(available RAM: {avail_ram // 1024 // 1024} MiB)'
-                )
-                self.max_shared_memory = adjusted
+
+        # Minimum SHM: enough for every worker to have 2 in-flight chunks, plus
+        # any reuse requirement computed by the manifest analysis.
+        min_shm = max(self.analysis.min_memory,
+                      self.analysis.biggest_chunk * self.max_workers * 2)
+
+        # Pipeline-optimal SHM: target_inflight is capped at max_workers*4.
+        # To sustain that rate, avail_shm/2 must stay >= max_workers*4, which
+        # requires total_segments >= max_workers*12.  Hard-cap at 512 MiB —
+        # no game pipeline benefits from more (SHM is demand-paged so larger
+        # allocations don't cost physical RAM until written).
+        pipeline_shm = max(min_shm, min(self.analysis.biggest_chunk * self.max_workers * 12,
+                                        512 * 1024 * 1024))
+
+        # Respect caller-supplied ceiling (--max-shared-memory) but don't exceed
+        # what the pipeline can use.
+        target = min(pipeline_shm, self.max_shared_memory)
+        target = max(target, min_shm)
+
+        # Safety cap for memory-constrained systems (< 8 GiB available).
+        # On ample-RAM systems the pipeline_shm target is already small enough.
+        if avail_ram > 0 and avail_ram < 8 * 1024 ** 3:
+            fraction = 0.20 if avail_ram < 4 * 1024 ** 3 else 0.30
+            ram_cap = max(min_shm, int(avail_ram * fraction))
+            target = min(target, ram_cap)
+
+        if target != self.max_shared_memory:
+            self.log.info(
+                f'Shared memory adjusted: {self.max_shared_memory // 1024 // 1024} MiB → '
+                f'{target // 1024 // 1024} MiB'
+                + (f' (RAM available: {avail_ram // 1024 // 1024} MiB)' if avail_ram > 0 else '')
+            )
+        self.max_shared_memory = target
 
         self.shared_memory = SharedMemory(create=True, size=self.max_shared_memory)
         self.log.debug(f'Created shared memory of size: {self.shared_memory.size / 1024 / 1024:.02f} MiB')
@@ -935,10 +954,15 @@ class DLManager(Process):
 
         self.log.debug(f'Created {len(self.sms)} shared memory segments.')
 
+        # Detect storage type early so writer_queue_2 is only created when needed.
+        num_fw = self._parallel_writers_for_path(self.dl_dir)
+        storage_label = 'SSD/NVMe' if num_fw > 1 else 'HDD or unknown'
+        self.log.info(f'Starting {num_fw} file writing worker(s) (storage detected: {storage_label})')
+
         # Create queues
         self.dl_worker_queue = MPQueue(-1)
         self.writer_queue = MPQueue(-1)
-        self.writer_queue_2 = MPQueue(-1)
+        self.writer_queue_2 = MPQueue(-1) if num_fw > 1 else None
         self.dl_result_q = MPQueue(-1)
         self.writer_result_q = MPQueue(-1)
         self.signed_chunks_q = MPQueue(-1)
@@ -955,10 +979,6 @@ class DLManager(Process):
                          dl_timeout=self.dl_timeout, bind_addr=bind_ip, secrets=self.manifest_secrets)
             self.children.append(w)
             w.start()
-
-        num_fw = self._parallel_writers_for_path(self.dl_dir)
-        storage_label = 'SSD/NVMe' if num_fw > 1 else 'HDD or unknown'
-        self.log.info(f'Starting {num_fw} file writing worker(s) (storage detected: {storage_label})')
 
         writer_p = FileWorker(self.writer_queue, self.writer_result_q, self.dl_dir,
                               self.shared_memory.name, self.cache_dir, self.logging_queue)
