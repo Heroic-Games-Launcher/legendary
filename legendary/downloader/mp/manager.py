@@ -487,17 +487,26 @@ class DLManager(Process):
         # If we're not using signed URLs, just pretend the raw chunks are the signed ones
         for guid in self.chunks_to_dl:
             self.signed_chunks_q.put((self.chunk_data_list.get_chunk_by_guid(guid), None))
+        # Wake up download_job_manager — it may be waiting on sig_chunks_cond
+        with sig_chunks_cond:
+            sig_chunks_cond.notify_all()
 
 
     def _do_chunk_signing(self, sig_chunks_cond: Condition):
         ticket = self._gen_ticket()
+        # Keep signed_chunks_q filled ahead of workers: fetch when it drops below this threshold
+        prefetch_threshold = self.max_workers * 4
         while self.chunks_to_dl and self.running:
-            if not self.signed_chunks_q.empty():
+            try:
+                pending = self.signed_chunks_q.qsize()
+            except NotImplementedError:
+                pending = 0 if self.signed_chunks_q.empty() else prefetch_threshold
+            if pending >= prefetch_threshold:
                 sleep(0.05)
                 continue
 
             self.log.debug('Fetching more chunk URLs...')
-            num_of_chunks_to_fetch = min(len(self.chunks_to_dl), 50)
+            num_of_chunks_to_fetch = min(len(self.chunks_to_dl), 100)
             unprocessed_chunk_ids = list(self.chunks_to_dl.popleft() for _ in range(num_of_chunks_to_fetch))
             unprocessed_chunks = list(self.chunk_data_list.get_chunk_by_guid(guid) for guid in unprocessed_chunk_ids)
 
@@ -525,10 +534,26 @@ class DLManager(Process):
 
     def download_job_manager(self, task_cond: Condition, shm_cond: Condition, sig_chunks_cond: Condition):
         terminate = False
+        _last_resource_check = 0.0
+        _load_factor = 1.0
         while self.running and not terminate:
             no_shm = False
             no_signed_chunks = False
-            while self.active_tasks < self.max_workers * 2:
+
+            # Re-evaluate CPU load every 5 s (cheap: one getloadavg call).
+            now = time.monotonic()
+            if now - _last_resource_check > 5.0:
+                _load_factor = self._cpu_load_factor()
+                _last_resource_check = now
+
+            # Dynamic target: scale with available SHM (disk pressure) and CPU load.
+            # avail_shm high → disk is fast → allow more in-flight downloads.
+            # avail_shm low  → disk is the bottleneck → reduce pressure.
+            # _load_factor < 1.0 → system under CPU load → back off further.
+            avail_shm = len(self.sms)
+            shm_target = max(self.max_workers, min(self.max_workers * 4, avail_shm // 2))
+            target_inflight = max(1, int(shm_target * _load_factor))
+            while self.active_tasks < target_inflight:
                 try:
                     sms = self.sms.popleft()
                 except IndexError:  # no free cache
@@ -656,12 +681,31 @@ class DLManager(Process):
         self.log.debug('Download result handler quitting...')
 
     def fw_results_handler(self, shm_cond: Condition):
+        # Buffer resume-file lines and flush in batches to avoid opening the
+        # file on every completed file (10 000+ times for large games).
+        _resume_buf: list = []
+        _resume_file_handle = None
+        if self.resume_file:
+            try:
+                _resume_file_handle = open(self.resume_file, 'a', encoding='utf-8')
+            except OSError as e:
+                self.log.warning(f'Could not open resume file for writing: {e!r}')
+
+        def _flush_resume():
+            if _resume_file_handle and _resume_buf:
+                _resume_file_handle.writelines(_resume_buf)
+                _resume_file_handle.flush()
+                _resume_buf.clear()
+
         while self.running:
             try:
                 res = self.writer_result_q.get(timeout=1.0)
 
                 if isinstance(res, TerminateWorkerTask):
                     self.log.debug('Got termination command in FW result handler')
+                    _flush_resume()
+                    if _resume_file_handle:
+                        _resume_file_handle.close()
                     break
 
                 self.num_tasks_processed_since_last += 1
@@ -671,9 +715,10 @@ class DLManager(Process):
                         res.filename = res.filename[:-4]
 
                     file_hash = self.hash_map[res.filename]
-                    # write last completed file to super simple resume file
-                    with open(self.resume_file, 'a', encoding='utf-8') as rf:
-                        rf.write(f'{file_hash}:{res.filename}\n')
+                    _resume_buf.append(f'{file_hash}:{res.filename}\n')
+                    # Flush every 20 files or when buffer grows large
+                    if len(_resume_buf) >= 20:
+                        _flush_resume()
 
                 if not res.success:
                     # todo make this kill the installation process or at least skip the file and mark it as failed
@@ -760,7 +805,50 @@ class DLManager(Process):
             self.shared_memory.unlink()
             self.shared_memory = None
 
+    @staticmethod
+    def _available_ram_bytes() -> int:
+        """Return MemAvailable from /proc/meminfo in bytes. Returns 0 on error or non-Linux."""
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if line.startswith('MemAvailable:'):
+                        return int(line.split()[1]) * 1024
+        except Exception:
+            pass
+        return 0
+
+    @staticmethod
+    def _cpu_load_factor() -> float:
+        """
+        Return 0.25–1.0 representing how much of the download budget to use.
+        1.0 = system idle, drops as load increases relative to CPU count.
+        """
+        try:
+            load_1min = os.getloadavg()[0]
+            ncpu = os.cpu_count() or 1
+            # At load == ncpu (all cores busy): factor ~= 0.5
+            # At load >= 2×ncpu: factor = 0.25 (floor)
+            return max(0.25, 1.0 - (load_1min / ncpu) * 0.5)
+        except Exception:
+            return 1.0
+
     def run_real(self):
+        # Cap shared memory against available system RAM before allocating.
+        # Never use more than 40 % of what the OS reports as free, but always
+        # keep at least enough for 2 chunks per worker so the pipeline can run.
+        avail_ram = self._available_ram_bytes()
+        if avail_ram > 0:
+            ram_cap = int(avail_ram * 0.4)
+            min_shm = self.analysis.biggest_chunk * self.max_workers * 2
+            if self.max_shared_memory > ram_cap:
+                adjusted = max(ram_cap, min_shm)
+                self.log.info(
+                    f'Reducing shared memory {self.max_shared_memory // 1024 // 1024} MiB → '
+                    f'{adjusted // 1024 // 1024} MiB '
+                    f'(available RAM: {avail_ram // 1024 // 1024} MiB)'
+                )
+                self.max_shared_memory = adjusted
+
         self.shared_memory = SharedMemory(create=True, size=self.max_shared_memory)
         self.log.debug(f'Created shared memory of size: {self.shared_memory.size / 1024 / 1024:.02f} MiB')
 

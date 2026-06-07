@@ -197,6 +197,8 @@ class FileWorker(Process):
 
         last_filename = ''
         current_file = None
+        # Cache directories we've already created to avoid a stat() per task.
+        _dirs_created: set = set()
 
         while True:
             try:
@@ -214,18 +216,21 @@ class FileWorker(Process):
                     self.o_q.put(TerminateWorkerTask())
                     break
 
-                # make directories if required
-                path = os.path.split(j.filename)[0]
-                if not os.path.exists(os.path.join(self.base_path, path)):
-                    os.makedirs(os.path.join(self.base_path, path))
-
                 full_path = os.path.join(self.base_path, j.filename)
 
                 if j.flags & TaskFlags.CREATE_EMPTY_FILE:  # just create an empty file
+                    dir_path = os.path.join(self.base_path, os.path.split(j.filename)[0])
+                    if dir_path not in _dirs_created:
+                        os.makedirs(dir_path, exist_ok=True)
+                        _dirs_created.add(dir_path)
                     open(full_path, 'a').close()
                     self.o_q.put(WriterTaskResult(success=True, **j.__dict__))
                     continue
                 elif j.flags & TaskFlags.OPEN_FILE:
+                    dir_path = os.path.join(self.base_path, os.path.split(j.filename)[0])
+                    if dir_path not in _dirs_created:
+                        os.makedirs(dir_path, exist_ok=True)
+                        _dirs_created.add(dir_path)
                     if current_file:
                         logger.warning(f'Opening new file {j.filename} without closing previous! {last_filename}')
                         current_file.close()
