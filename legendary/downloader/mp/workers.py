@@ -306,20 +306,11 @@ class FileWorker(Process):
                     continue
                 elif j.flags & TaskFlags.CLOSE_FILE:
                     if current_file:
-                        # flush() moves the userspace buffer (up to 1 MiB) into the
-                        # kernel page cache first, so the subsequent DONTNEED hint
-                        # covers the entire file — not just what was already paged.
-                        # flush() is fast (no syscall round-trip to disk).
-                        try:
-                            current_file.flush()
-                            if sys.platform == 'linux' and current_file_fd >= 0:
-                                os.posix_fadvise(current_file_fd, 0, 0, os.POSIX_FADV_DONTNEED)
-                        except OSError:
-                            pass
-                        # Submit the fd close to the background pool so btrfs inode
-                        # CoW (the slow part) doesn't stall the write pipeline.
-                        # flush() above already emptied the userspace buffer, so
-                        # close() here is just close(fd) + metadata update.
+                        # Submit close to the background pool so btrfs inode CoW
+                        # (the slow part) doesn't stall the write pipeline.
+                        # NOTE: FADV_DONTNEED was removed — on btrfs it forces
+                        # immediate writeback of dirty pages, breaking write
+                        # coalescing and causing oscillating disk I/O.
                         _close_pool.submit(current_file.close)
                         current_file = None
                         current_file_fd = -1
