@@ -533,7 +533,7 @@ class DLManager(Process):
                     break
 
                 try:
-                    chunk, url = self.signed_chunks_q.get(False, 3.0)
+                    chunk, url = self.signed_chunks_q.get(block=False)
                 except Empty:
                     no_signed_chunks = True
                     break
