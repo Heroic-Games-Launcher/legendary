@@ -535,10 +535,12 @@ class DLManager(Process):
                 try:
                     chunk, url = self.signed_chunks_q.get(False, 3.0)
                 except Empty:
+                    self.sms.appendleft(sms)
                     no_signed_chunks = True
                     break
 
                 if isinstance(chunk, TerminateWorkerTask):
+                    self.sms.appendleft(sms)
                     terminate = True
                     break
 
@@ -549,6 +551,7 @@ class DLManager(Process):
                                              timeout=1.0)
                 except Exception as e:
                     self.log.warning(f'Failed to add to download queue: {e!r}')
+                    self.sms.appendleft(sms)
                     self.signed_chunks_q.put((chunk, url))
                     break
 
