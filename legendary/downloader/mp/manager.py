@@ -504,6 +504,11 @@ class DLManager(Process):
 
             self.sign_pipe.send((ticket.signedTicket, list(c.path for c in unprocessed_chunks)))
 
+            while self.running and not self.sign_pipe.poll(1.0):
+                pass
+            if not self.running:
+                return
+
             signed_urls: dict[str, str] = self.sign_pipe.recv()
             for chunk in unprocessed_chunks:
                 signed_url = signed_urls[chunk.path]
@@ -539,6 +544,7 @@ class DLManager(Process):
                     break
 
                 if isinstance(chunk, TerminateWorkerTask):
+                    self.running = False
                     terminate = True
                     break
 
@@ -550,6 +556,7 @@ class DLManager(Process):
                 except Exception as e:
                     self.log.warning(f'Failed to add to download queue: {e!r}')
                     self.signed_chunks_q.put((chunk, url))
+                    no_signed_chunks = True
                     break
 
                 self.active_tasks += 1
