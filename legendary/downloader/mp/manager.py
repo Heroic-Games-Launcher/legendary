@@ -568,7 +568,7 @@ class DLManager(Process):
 
             if no_signed_chunks:
                 with sig_chunks_cond:
-                    self.log.debug('Waiting for more signed cunks...')
+                    self.log.debug('Waiting for more signed chunks...')
                     sig_chunks_cond.wait(timeout=1.0)
 
         self.log.debug('Download Job Manager quitting...')
