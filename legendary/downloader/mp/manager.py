@@ -539,6 +539,7 @@ class DLManager(Process):
                     break
 
                 if isinstance(chunk, TerminateWorkerTask):
+                    self.running = False
                     terminate = True
                     break
 
@@ -550,6 +551,7 @@ class DLManager(Process):
                 except Exception as e:
                     self.log.warning(f'Failed to add to download queue: {e!r}')
                     self.signed_chunks_q.put((chunk, url))
+                    no_signed_chunks = True
                     break
 
                 self.active_tasks += 1
