@@ -37,12 +37,10 @@ def _fallocate_ok(path: str) -> bool:
     return _fs_type_cache[mount_dir] in _FALLOCATE_SUPPORTED_FS
 
 
-from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import QueueHandler
 from multiprocessing import Process
 from multiprocessing.shared_memory import SharedMemory
 from queue import Empty
-from threading import Thread
 
 import requests
 from requests.adapters import HTTPAdapter, DEFAULT_POOLBLOCK
@@ -91,43 +89,6 @@ class DLWorker(Process):
             self.session.mount('https://', adapter)
             self.session.mount('http://', adapter)
 
-        # Per-worker flag: set to False the first time a range request fails,
-        # disabling splits for the rest of this worker's lifetime.
-        self._ranges_ok = True
-
-    def _ranged_download(self, url: str, total: int):
-        """
-        Download *url* as two parallel half-range requests.
-        Returns the assembled bytes, or None if ranges are unsupported or failed.
-        Each half uses its own TCP connection → bypasses per-connection CDN throttling.
-        """
-        mid = total // 2
-        parts = [None, None]
-        ok = [True, True]
-
-        def fetch(idx, start, end):
-            try:
-                r = self.session.get(url, timeout=self.dl_timeout,
-                                     headers={'Range': f'bytes={start}-{end}'})
-                if r.status_code == 206:
-                    parts[idx] = r.content
-                else:
-                    ok[idx] = False
-            except Exception:
-                ok[idx] = False
-
-        t0 = Thread(target=fetch, args=(0, 0, mid - 1), daemon=True)
-        t1 = Thread(target=fetch, args=(1, mid, total - 1), daemon=True)
-        t0.start()
-        t1.start()
-        t0.join(timeout=self.dl_timeout + 5)
-        t1.join(timeout=self.dl_timeout + 5)
-
-        if not all(ok) or None in parts:
-            self._ranges_ok = False
-            return None
-        return parts[0] + parts[1]
-
     def run(self):
         # we have to fix up the logger before we can start
         _root = logging.getLogger()
@@ -167,15 +128,9 @@ class DLWorker(Process):
                     logger.debug(f'Downloading {job.url}')
 
                     try:
-                        raw = None
-                        # Split into 2 parallel range requests when CDN supports it
-                        # and chunk is large enough to benefit (≥ 256 KiB compressed).
-                        if self._ranges_ok and job.compressed_size >= 256 * 1024:
-                            raw = self._ranged_download(job.url, job.compressed_size)
-                        if raw is None:
-                            r = self.session.get(job.url, timeout=self.dl_timeout)
-                            r.raise_for_status()
-                            raw = r.content
+                        r = self.session.get(job.url, timeout=self.dl_timeout)
+                        r.raise_for_status()
+                        raw = r.content
                     except Exception as e:
                         logger.warning(f'Chunk download for {job.chunk_guid} failed: ({e!r}), retrying...')
                         continue
@@ -243,12 +198,9 @@ class FileWorker(Process):
 
         last_filename = ''
         current_file = None
-        current_file_fd = -1  # raw fd for fadvise, kept until async close finishes
+        current_file_fd = -1
         # Cache directories we've already created to avoid a stat() per task.
         _dirs_created: set = set()
-        # Thread pool for async file closes so btrfs CoW metadata updates don't
-        # stall the write pipeline.  max_workers=2 handles a CLOSE/RENAME overlap.
-        _close_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='fw-close')
 
         while True:
             try:
@@ -261,8 +213,6 @@ class FileWorker(Process):
                 if isinstance(j, TerminateWorkerTask):
                     if current_file:
                         current_file.close()
-                    # Wait for any in-flight async closes to finish before exiting
-                    _close_pool.shutdown(wait=True)
                     logger.debug('Worker received termination signal, shutting down...')
                     # send termination task to results halnder as well
                     self.o_q.put(TerminateWorkerTask())
@@ -287,7 +237,7 @@ class FileWorker(Process):
                         logger.warning(f'Opening new file {j.filename} without closing previous! {last_filename}')
                         current_file.close()
 
-                    current_file = open(full_path, 'wb', buffering=1024 * 1024)
+                    current_file = open(full_path, 'wb')
                     current_file_fd = current_file.fileno()
                     last_filename = j.filename
 
@@ -297,21 +247,12 @@ class FileWorker(Process):
                                 os.posix_fallocate(current_file_fd, 0, j.file_size)
                             except OSError as e:
                                 logger.debug(f'fallocate failed (not critical): {e}')
-                        try:
-                            os.posix_fadvise(current_file_fd, 0, 0, os.POSIX_FADV_NOREUSE)
-                        except OSError:
-                            pass
 
                     self.o_q.put(WriterTaskResult(success=True, **j.__dict__))
                     continue
                 elif j.flags & TaskFlags.CLOSE_FILE:
                     if current_file:
-                        # Submit close to the background pool so btrfs inode CoW
-                        # (the slow part) doesn't stall the write pipeline.
-                        # NOTE: FADV_DONTNEED was removed — on btrfs it forces
-                        # immediate writeback of dirty pages, breaking write
-                        # coalescing and causing oscillating disk I/O.
-                        _close_pool.submit(current_file.close)
+                        current_file.close()
                         current_file = None
                         current_file_fd = -1
                     else:

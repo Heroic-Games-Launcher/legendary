@@ -536,25 +536,16 @@ class DLManager(Process):
 
     def download_job_manager(self, task_cond: Condition, shm_cond: Condition, sig_chunks_cond: Condition):
         terminate = False
-        _last_resource_check = 0.0
-        _load_factor = 1.0
         while self.running and not terminate:
             no_shm = False
             no_signed_chunks = False
 
-            # Re-evaluate CPU load every 5 s (cheap: one getloadavg call).
-            now = time.monotonic()
-            if now - _last_resource_check > 5.0:
-                _load_factor = self._cpu_load_factor()
-                _last_resource_check = now
-
-            # Dynamic target: scale with available SHM (disk pressure) and CPU load.
-            # avail_shm high → disk is fast → allow more in-flight downloads.
-            # avail_shm low  → disk is the bottleneck → reduce pressure.
-            # _load_factor < 1.0 → system under CPU load → back off further.
+            # Throttle based on available SHM only: high avail_shm → disk keeping
+            # up → allow more downloads; low avail_shm → disk is the bottleneck.
+            # CPU-load throttling was removed: getloadavg() counts our own worker
+            # processes as load, causing the pipeline to throttle itself.
             avail_shm = len(self.sms)
-            shm_target = max(self.max_workers, min(self.max_workers * 4, avail_shm // 2))
-            target_inflight = max(1, int(shm_target * _load_factor))
+            target_inflight = max(self.max_workers, min(self.max_workers * 4, avail_shm // 2))
             while self.active_tasks < target_inflight:
                 try:
                     sms = self.sms.popleft()
@@ -575,8 +566,7 @@ class DLManager(Process):
                 self.log.debug(f'Adding {chunk.guid_num} (active: {self.active_tasks})')
                 try:
                     self.dl_worker_queue.put(DownloaderTask(url=url or (self.base_url + '/' + chunk.path),
-                                                            chunk_guid=chunk.guid_num, shm=sms,
-                                                            compressed_size=chunk.file_size),
+                                                            chunk_guid=chunk.guid_num, shm=sms),
                                                          timeout=1.0)
                 except Exception as e:
                     self.log.warning(f'Failed to add to download queue: {e!r}')
@@ -604,28 +594,18 @@ class DLManager(Process):
 
         self.log.debug('Download Job Manager quitting...')
 
-    def dl_results_handler(self, task_cond: Condition, num_file_workers: int = 1):
+    def dl_results_handler(self, task_cond: Condition):
         in_buffer = dict()
 
         task = self.tasks.popleft()
         current_file = ''
 
-        # When num_file_workers == 2, alternate between the two writer queues on each
-        # OPEN_FILE so two files are written in parallel.  All tasks for the same file
-        # (OPEN → chunks → CLOSE → RENAME/CHMOD) always stay on the same queue.
-        _writer_qs = [self.writer_queue, self.writer_queue_2]
-        _q_idx = 0
-        _wq = self.writer_queue  # single-worker default
-
         while task and self.running:
             if isinstance(task, FileTask):  # this wasn't necessarily a good idea...
                 try:
                     if task.flags & TaskFlags.OPEN_FILE:
-                        if num_file_workers > 1:
-                            _wq = _writer_qs[_q_idx % 2]
-                            _q_idx += 1
                         current_file = task.filename
-                    _wq.put(WriterTask(**task.__dict__), timeout=1.0)
+                    self.writer_queue.put(WriterTask(**task.__dict__), timeout=1.0)
                 except Exception as e:
                     self.tasks.appendleft(task)
                     self.log.warning(f'Adding to queue failed: {e!r}')
@@ -644,7 +624,7 @@ class DLManager(Process):
 
                 try:
                     self.log.debug(f'Adding {task.chunk_guid} to writer queue')
-                    _wq.put(WriterTask(
+                    self.writer_queue.put(WriterTask(
                         filename=current_file, shared_memory=res_shm,
                         chunk_offset=task.chunk_offset, chunk_size=task.chunk_size,
                         chunk_guid=task.chunk_guid, old_file=task.chunk_file,
@@ -693,7 +673,7 @@ class DLManager(Process):
 
         self.log.debug('Download result handler quitting...')
 
-    def fw_results_handler(self, shm_cond: Condition, num_file_workers: int = 1):
+    def fw_results_handler(self, shm_cond: Condition):
         # Buffer resume-file lines and flush in batches to avoid opening the
         # file on every completed file (10 000+ times for large games).
         _resume_buf: list = []
@@ -710,20 +690,16 @@ class DLManager(Process):
                 _resume_file_handle.flush()
                 _resume_buf.clear()
 
-        _terminated = 0
         while self.running:
             try:
                 res = self.writer_result_q.get(timeout=1.0)
 
                 if isinstance(res, TerminateWorkerTask):
-                    _terminated += 1
-                    self.log.debug(f'FW result handler: worker terminated ({_terminated}/{num_file_workers})')
-                    if _terminated >= num_file_workers:
-                        _flush_resume()
-                        if _resume_file_handle:
-                            _resume_file_handle.close()
-                        break
-                    continue
+                    self.log.debug('FW result handler: worker terminated')
+                    _flush_resume()
+                    if _resume_file_handle:
+                        _resume_file_handle.close()
+                    break
 
                 self.num_tasks_processed_since_last += 1
 
@@ -844,104 +820,30 @@ class DLManager(Process):
             pass
         return 0
 
-    @staticmethod
-    def _cpu_load_factor() -> float:
-        """
-        Return 0.25–1.0 representing how much of the download budget to use.
-        1.0 = system idle, drops as load increases relative to CPU count.
-        """
-        try:
-            load_1min = os.getloadavg()[0]
-            ncpu = os.cpu_count() or 1
-            # At load == ncpu (all cores busy): factor ~= 0.5
-            # At load >= 2×ncpu: factor = 0.25 (floor)
-            return max(0.25, 1.0 - (load_1min / ncpu) * 0.5)
-        except Exception:
-            return 1.0
-
-    @staticmethod
-    def _parallel_writers_for_path(path: str) -> int:
-        """
-        Return the optimal number of parallel FileWorkers for *path*.
-        Returns 2 on SSD/NVMe with a filesystem that handles concurrent writes well,
-        1 on HDD (parallel writes cause seek thrashing) or unknown storage.
-        """
-        _parallel_fs = frozenset({'ext4', 'ext3', 'ext2', 'xfs', 'f2fs', 'btrfs', 'tmpfs'})
-
-        try:
-            from legendary.downloader.mp.workers import _fs_type_for_path
-            fs = _fs_type_for_path(path)
-        except Exception:
-            fs = ''
-
-        if fs not in _parallel_fs:
-            return 1
-
-        # Resolve which block device hosts this path
-        try:
-            real = os.path.realpath(path)
-            best_mp, device = '', ''
-            with open('/proc/mounts') as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 2 and real.startswith(parts[1]) and len(parts[1]) > len(best_mp):
-                        best_mp, device = parts[1], parts[0]
-
-            if not device.startswith('/dev/'):
-                return 1
-
-            dev_name = os.path.basename(os.path.realpath(device))
-
-            # Walk /sys/block to find the parent device (handles sda1→sda, nvme0n1p1→nvme0n1, etc.)
-            base = None
-            for bd in os.listdir('/sys/block/'):
-                if dev_name.startswith(bd) and (base is None or len(bd) > len(base)):
-                    base = bd
-
-            if not base:
-                return 1
-
-            with open(f'/sys/block/{base}/queue/rotational') as f:
-                is_ssd = f.read().strip() == '0'
-
-            return 2 if is_ssd else 1
-        except Exception:
-            return 1
-
     def run_real(self):
         avail_ram = self._available_ram_bytes()
 
-        # Minimum SHM: enough for every worker to have 2 in-flight chunks, plus
-        # any reuse requirement computed by the manifest analysis.
+        # SHM is demand-paged: only active chunks use physical RAM (~64 MB at
+        # max_workers*4 in-flight with 1 MiB chunks).  The virtual allocation
+        # must be large enough to buffer download-write rate mismatches — too
+        # small causes SHM pressure and oscillating download speeds.
+        # Use the caller-supplied value (default 1 GiB) and only reduce it on
+        # RAM-constrained systems (< 8 GiB available).
         min_shm = max(self.analysis.min_memory,
                       self.analysis.biggest_chunk * self.max_workers * 2)
+        target = max(self.max_shared_memory, min_shm)
 
-        # Pipeline-optimal SHM: target_inflight is capped at max_workers*4.
-        # To sustain that rate, avail_shm/2 must stay >= max_workers*4, which
-        # requires total_segments >= max_workers*12.  Hard-cap at 512 MiB —
-        # no game pipeline benefits from more (SHM is demand-paged so larger
-        # allocations don't cost physical RAM until written).
-        pipeline_shm = max(min_shm, min(self.analysis.biggest_chunk * self.max_workers * 12,
-                                        512 * 1024 * 1024))
-
-        # Respect caller-supplied ceiling (--max-shared-memory) but don't exceed
-        # what the pipeline can use.
-        target = min(pipeline_shm, self.max_shared_memory)
-        target = max(target, min_shm)
-
-        # Safety cap for memory-constrained systems (< 8 GiB available).
-        # On ample-RAM systems the pipeline_shm target is already small enough.
         if avail_ram > 0 and avail_ram < 8 * 1024 ** 3:
             fraction = 0.20 if avail_ram < 4 * 1024 ** 3 else 0.30
             ram_cap = max(min_shm, int(avail_ram * fraction))
-            target = min(target, ram_cap)
+            if target > ram_cap:
+                self.log.info(
+                    f'Shared memory reduced: {target // 1024 // 1024} MiB → '
+                    f'{ram_cap // 1024 // 1024} MiB '
+                    f'(RAM available: {avail_ram // 1024 // 1024} MiB)'
+                )
+                target = ram_cap
 
-        if target != self.max_shared_memory:
-            self.log.info(
-                f'Shared memory adjusted: {self.max_shared_memory // 1024 // 1024} MiB → '
-                f'{target // 1024 // 1024} MiB'
-                + (f' (RAM available: {avail_ram // 1024 // 1024} MiB)' if avail_ram > 0 else '')
-            )
         self.max_shared_memory = target
 
         self.shared_memory = SharedMemory(create=True, size=self.max_shared_memory)
@@ -955,15 +857,10 @@ class DLManager(Process):
 
         self.log.debug(f'Created {len(self.sms)} shared memory segments.')
 
-        # Detect storage type early so writer_queue_2 is only created when needed.
-        num_fw = self._parallel_writers_for_path(self.dl_dir)
-        storage_label = 'SSD/NVMe' if num_fw > 1 else 'HDD or unknown'
-        self.log.info(f'Starting {num_fw} file writing worker(s) (storage detected: {storage_label})')
-
         # Create queues
         self.dl_worker_queue = MPQueue(-1)
         self.writer_queue = MPQueue(-1)
-        self.writer_queue_2 = MPQueue(-1) if num_fw > 1 else None
+        self.writer_queue_2 = None
         self.dl_result_q = MPQueue(-1)
         self.writer_result_q = MPQueue(-1)
         self.signed_chunks_q = MPQueue(-1)
@@ -986,13 +883,7 @@ class DLManager(Process):
         self.children.append(writer_p)
         writer_p.start()
 
-        if num_fw > 1:
-            writer_p2 = FileWorker(self.writer_queue_2, self.writer_result_q, self.dl_dir,
-                                   self.shared_memory.name, self.cache_dir, self.logging_queue)
-            self.children.append(writer_p2)
-            writer_p2.start()
-        else:
-            writer_p2 = None
+        writer_p2 = None
 
         num_chunk_tasks = sum(isinstance(t, ChunkTask) for t in self.tasks)
         num_dl_tasks = len(self.chunks_to_dl)
@@ -1017,8 +908,8 @@ class DLManager(Process):
         s_time = time.time()
         self.threads.append(Thread(target=self.chunk_signing_manager, args=(sig_chunks_cond,)))
         self.threads.append(Thread(target=self.download_job_manager, args=(task_cond, shm_cond, sig_chunks_cond)))
-        self.threads.append(Thread(target=self.dl_results_handler, args=(task_cond, num_fw)))
-        self.threads.append(Thread(target=self.fw_results_handler, args=(shm_cond, num_fw)))
+        self.threads.append(Thread(target=self.dl_results_handler, args=(task_cond,)))
+        self.threads.append(Thread(target=self.fw_results_handler, args=(shm_cond,)))
 
         for t in self.threads:
             t.start()
@@ -1095,8 +986,6 @@ class DLManager(Process):
 
         self.log.info('Waiting for installation to finish...')
         self.writer_queue.put_nowait(TerminateWorkerTask())
-        if num_fw > 1:
-            self.writer_queue_2.put_nowait(TerminateWorkerTask())
         self.signed_chunks_q.put_nowait((TerminateWorkerTask(), None))
 
         writer_p.join(timeout=10.0)

@@ -29,7 +29,6 @@ class DownloaderTask:
     url: str
     chunk_guid: int
     shm: SharedMemorySegment
-    compressed_size: int = 0  # compressed chunk size from manifest (enables range splitting)
 
 
 @dataclass
