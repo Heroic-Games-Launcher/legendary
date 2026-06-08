@@ -251,7 +251,7 @@ class DLManager(Process):
 
             # chunks of unchanged files are not downloaded so we can skip them
             if fm.filename in mc.unchanged:
-                analysis_res.unchanged += fm.file_size
+                analysis_res.unchanged_size += fm.file_size
                 continue
 
             for cp in fm.chunk_parts:
