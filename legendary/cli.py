@@ -1055,7 +1055,7 @@ class LegendaryCLI:
         logger.info(f'Download size: {analysis.dl_size / 1024 / 1024:.02f} MiB '
                     f'(Compression savings: {compression:.01f}%)')
         logger.info(f'Reusable size: {analysis.reuse_size / 1024 / 1024:.02f} MiB (chunks) / '
-                    f'{analysis.unchanged / 1024 / 1024:.02f} MiB (unchanged / skipped)')
+                    f'{analysis.unchanged_size / 1024 / 1024:.02f} MiB (unchanged / skipped)')
         logger.info('Downloads are resumable, you can interrupt the download with '
                     'CTRL-C and resume it using the same command later on.')
 
