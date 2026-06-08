@@ -504,6 +504,11 @@ class DLManager(Process):
 
             self.sign_pipe.send((ticket.signedTicket, list(c.path for c in unprocessed_chunks)))
 
+            while self.running and not self.sign_pipe.poll(1.0):
+                pass
+            if not self.running:
+                return
+
             signed_urls: dict[str, str] = self.sign_pipe.recv()
             for chunk in unprocessed_chunks:
                 signed_url = signed_urls[chunk.path]
