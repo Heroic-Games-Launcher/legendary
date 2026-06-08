@@ -484,6 +484,8 @@ class DLManager(Process):
         # If we're not using signed URLs, just pretend the raw chunks are the signed ones
         for guid in self.chunks_to_dl:
             self.signed_chunks_q.put((self.chunk_data_list.get_chunk_by_guid(guid), None))
+            with sig_chunks_cond:
+                sig_chunks_cond.notify()
 
 
     def _do_chunk_signing(self, sig_chunks_cond: Condition):
