@@ -1024,6 +1024,11 @@ class LegendaryCLI:
         if not analysis.dl_size:
             old_igame = self.core.get_installed_game(game.app_name)
             logger.info('Download size is 0, the game is either already up to date or has not changed. Exiting...')
+            # Files are fully present on disk but game was never registered (e.g. interrupted install)
+            if not old_igame and not args.no_install:
+                logger.info('Game files are complete but installation was not registered, registering now...')
+                self.core.install_game(igame)
+                old_igame = igame
             if old_igame and args.repair_mode and os.path.exists(repair_file):
                 if old_igame.needs_verification:
                     old_igame.needs_verification = False
