@@ -704,7 +704,9 @@ class LegendaryCLI:
         full_params = list()
         full_params.extend(params.launch_command)
         if 'LEGENDARY_WRAPPER_EXE' in full_env:
-            full_params.append(full_env['LEGENDARY_WRAPPER_EXE'].strip())
+            wrapper = full_env.pop('LEGENDARY_WRAPPER_EXE', '').strip()
+            if wrapper.endswith('.exe') and os.path.isfile(wrapper):
+                full_params.append(wrapper)
         full_params.append(os.path.join(params.game_directory, params.game_executable))
         full_params.extend(params.game_parameters)
         full_params.extend(params.user_parameters)
